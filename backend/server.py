@@ -326,12 +326,15 @@ async def rate_limit_middleware(request: Request, call_next):
     Global rate limiting for all endpoints
     
     Prevents DOS attacks and ensures fair usage.
+    Auth endpoints have their own specific rate limiting (see login endpoint).
     """
-    # Skip health checks
-    if request.url.path.startswith("/api/health"):
+    # Skip health checks, docs, and auth endpoints (auth has its own rate limiting)
+    skip_paths = ["/api/health", "/docs", "/openapi.json", "/redoc", "/api/auth"]
+    
+    if any(request.url.path.startswith(path) for path in skip_paths):
         return await call_next(request)
     
-    # Check rate limit
+    # Check rate limit for non-auth endpoints
     ip = rate_limiter.get_client_ip(request)
     endpoint = request.url.path
     

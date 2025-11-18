@@ -2,21 +2,31 @@
  * API Endpoints Configuration
  * 
  * Matches backend server.py endpoints exactly
- * Auto-generates typed endpoint URLs
+ * 
+ * CRITICAL: All endpoints are RELATIVE paths (start with /)
+ * The base URL is configured in client.ts and automatically injected
+ * 
+ * DO NOT add base URL here - it causes double-prefixing issues:
+ * ❌ Wrong: `${API_BASE}/api/auth/register` → http://localhost:8001/api/auth/register
+ * ✅ Right: '/api/auth/register' → Gets baseURL from client.ts
+ * 
+ * This ensures compatibility across environments:
+ * - Local: Uses http://localhost:8001 from client.ts
+ * - Emergent: Uses relative URLs (Kubernetes ingress handles routing)
  */
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
+// NO API_BASE - endpoints are relative paths only!
 
 // ============================================================================
 // AUTHENTICATION ENDPOINTS
 // ============================================================================
 
 export const AUTH_ENDPOINTS = {
-  REGISTER: `${API_BASE}/api/auth/register`,
-  LOGIN: `${API_BASE}/api/auth/login`,
-  LOGOUT: `${API_BASE}/api/auth/logout`,
-  REFRESH: `${API_BASE}/api/auth/refresh`,
-  ME: `${API_BASE}/api/auth/me`,
+  REGISTER: '/api/auth/register',
+  LOGIN: '/api/auth/login',
+  LOGOUT: '/api/auth/logout',
+  REFRESH: '/api/auth/refresh',
+  ME: '/api/auth/me',
 } as const;
 
 // ============================================================================
@@ -24,9 +34,9 @@ export const AUTH_ENDPOINTS = {
 // ============================================================================
 
 export const CHAT_ENDPOINTS = {
-  SEND_MESSAGE: `${API_BASE}/api/v1/chat`,
-  GET_HISTORY: (sessionId: string) => `${API_BASE}/api/v1/chat/history/${sessionId}`,
-  DELETE_SESSION: (sessionId: string) => `${API_BASE}/api/v1/chat/session/${sessionId}`,
+  SEND_MESSAGE: '/api/v1/chat',
+  GET_HISTORY: (sessionId: string) => `/api/v1/chat/history/${sessionId}`,
+  DELETE_SESSION: (sessionId: string) => `/api/v1/chat/session/${sessionId}`,
 } as const;
 
 // ============================================================================
@@ -34,15 +44,15 @@ export const CHAT_ENDPOINTS = {
 // ============================================================================
 
 export const ANALYTICS_ENDPOINTS = {
-  DASHBOARD: (userId: string) => `${API_BASE}/api/v1/analytics/dashboard/${userId}`,
+  DASHBOARD: (userId: string) => `/api/v1/analytics/dashboard/${userId}`,
   PERFORMANCE: (userId: string, daysBack = 30) => 
-    `${API_BASE}/api/v1/analytics/performance/${userId}?days_back=${daysBack}`,
+    `/api/v1/analytics/performance/${userId}?days_back=${daysBack}`,
   EMOTIONS: (userId: string, days = 7) => 
-    `${API_BASE}/api/v1/analytics/emotions/${userId}?days=${days}`,
-  TOPICS: (userId: string) => `${API_BASE}/api/v1/analytics/topics/${userId}`,
-  VELOCITY: (userId: string) => `${API_BASE}/api/v1/analytics/velocity/${userId}`,
-  SESSIONS: (userId: string) => `${API_BASE}/api/v1/analytics/sessions/${userId}`,
-  INSIGHTS: (userId: string) => `${API_BASE}/api/v1/analytics/insights/${userId}`,
+    `/api/v1/analytics/emotions/${userId}?days=${days}`,
+  TOPICS: (userId: string) => `/api/v1/analytics/topics/${userId}`,
+  VELOCITY: (userId: string) => `/api/v1/analytics/velocity/${userId}`,
+  SESSIONS: (userId: string) => `/api/v1/analytics/sessions/${userId}`,
+  INSIGHTS: (userId: string) => `/api/v1/analytics/insights/${userId}`,
 } as const;
 
 // ============================================================================
@@ -50,12 +60,12 @@ export const ANALYTICS_ENDPOINTS = {
 // ============================================================================
 
 export const GAMIFICATION_ENDPOINTS = {
-  STATS: (userId: string) => `${API_BASE}/api/v1/gamification/stats/${userId}`,
+  STATS: (userId: string) => `/api/v1/gamification/stats/${userId}`,
   LEADERBOARD: (timeRange: string = 'weekly') => 
-    `${API_BASE}/api/v1/gamification/leaderboard?time_range=${timeRange}`,
-  ACHIEVEMENTS: `${API_BASE}/api/v1/gamification/achievements`,
-  RECORD_ACTIVITY: `${API_BASE}/api/v1/gamification/record-activity`,
-  STREAK: (userId: string) => `${API_BASE}/api/v1/gamification/streak/${userId}`,
+    `/api/v1/gamification/leaderboard?time_range=${timeRange}`,
+  ACHIEVEMENTS: '/api/v1/gamification/achievements',
+  RECORD_ACTIVITY: '/api/v1/gamification/record-activity',
+  STREAK: (userId: string) => `/api/v1/gamification/streak/${userId}`,
 } as const;
 
 // ============================================================================
@@ -63,11 +73,11 @@ export const GAMIFICATION_ENDPOINTS = {
 // ============================================================================
 
 export const VOICE_ENDPOINTS = {
-  TRANSCRIBE: `${API_BASE}/api/v1/voice/transcribe`,
-  SYNTHESIZE: `${API_BASE}/api/v1/voice/synthesize`,
-  ASSESS_PRONUNCIATION: `${API_BASE}/api/v1/voice/assess-pronunciation`,
-  CHAT: `${API_BASE}/api/v1/voice/chat`,
-  VOICES: `${API_BASE}/api/v1/voice/voices`,
+  TRANSCRIBE: '/api/v1/voice/transcribe',
+  SYNTHESIZE: '/api/v1/voice/synthesize',
+  ASSESS_PRONUNCIATION: '/api/v1/voice/assess-pronunciation',
+  CHAT: '/api/v1/voice/chat',
+  VOICES: '/api/v1/voice/voices',
 } as const;
 
 // ============================================================================
@@ -75,11 +85,11 @@ export const VOICE_ENDPOINTS = {
 // ============================================================================
 
 export const PERSONALIZATION_ENDPOINTS = {
-  PROFILE: (userId: string) => `${API_BASE}/api/v1/personalization/profile/${userId}`,
+  PROFILE: (userId: string) => `/api/v1/personalization/profile/${userId}`,
   RECOMMENDATIONS: (userId: string) => 
-    `${API_BASE}/api/v1/personalization/recommendations/${userId}`,
+    `/api/v1/personalization/recommendations/${userId}`,
   LEARNING_PATH: (userId: string, topic: string) => 
-    `${API_BASE}/api/v1/personalization/learning-path/${userId}/${topic}`,
+    `/api/v1/personalization/learning-path/${userId}/${topic}`,
 } as const;
 
 // ============================================================================
@@ -87,11 +97,11 @@ export const PERSONALIZATION_ENDPOINTS = {
 // ============================================================================
 
 export const CONTENT_ENDPOINTS = {
-  NEXT: (userId: string) => `${API_BASE}/api/v1/content/next/${userId}`,
+  NEXT: (userId: string) => `/api/v1/content/next/${userId}`,
   SEQUENCE: (userId: string, topic: string, nItems = 10) => 
-    `${API_BASE}/api/v1/content/sequence/${userId}/${topic}?n_items=${nItems}`,
+    `/api/v1/content/sequence/${userId}/${topic}?n_items=${nItems}`,
   SEARCH: (query: string, nResults = 5) => 
-    `${API_BASE}/api/v1/content/search?query=${encodeURIComponent(query)}&n_results=${nResults}`,
+    `/api/v1/content/search?query=${encodeURIComponent(query)}&n_results=${nResults}`,
 } as const;
 
 // ============================================================================
@@ -100,10 +110,10 @@ export const CONTENT_ENDPOINTS = {
 
 export const SPACED_REPETITION_ENDPOINTS = {
   DUE_CARDS: (userId: string, limit = 20, includeNew = true) => 
-    `${API_BASE}/api/v1/spaced-repetition/due-cards/${userId}?limit=${limit}&include_new=${includeNew}`,
-  CREATE_CARD: `${API_BASE}/api/v1/spaced-repetition/create-card`,
-  REVIEW_CARD: `${API_BASE}/api/v1/spaced-repetition/review-card`,
-  STATS: (userId: string) => `${API_BASE}/api/v1/spaced-repetition/stats/${userId}`,
+    `/api/v1/spaced-repetition/due-cards/${userId}?limit=${limit}&include_new=${includeNew}`,
+  CREATE_CARD: '/api/v1/spaced-repetition/create-card',
+  REVIEW_CARD: '/api/v1/spaced-repetition/review-card',
+  STATS: (userId: string) => `/api/v1/spaced-repetition/stats/${userId}`,
 } as const;
 
 // ============================================================================
@@ -111,10 +121,10 @@ export const SPACED_REPETITION_ENDPOINTS = {
 // ============================================================================
 
 export const COLLABORATION_ENDPOINTS = {
-  FIND_PEERS: `${API_BASE}/api/v1/collaboration/find-peers`,
-  CREATE_SESSION: `${API_BASE}/api/v1/collaboration/create-session`,
-  JOIN_SESSION: `${API_BASE}/api/v1/collaboration/join-session`,
-  SEND_MESSAGE: `${API_BASE}/api/v1/collaboration/send-message`,
+  FIND_PEERS: '/api/v1/collaboration/find-peers',
+  CREATE_SESSION: '/api/v1/collaboration/create-session',
+  JOIN_SESSION: '/api/v1/collaboration/join-session',
+  SEND_MESSAGE: '/api/v1/collaboration/send-message',
 } as const;
 
 // ============================================================================
@@ -122,10 +132,10 @@ export const COLLABORATION_ENDPOINTS = {
 // ============================================================================
 
 export const HEALTH_ENDPOINTS = {
-  BASIC: `${API_BASE}/api/health`,
-  DETAILED: `${API_BASE}/api/health/detailed`,
-  PROVIDERS: `${API_BASE}/api/v1/providers`,
-  MODEL_STATUS: `${API_BASE}/api/v1/system/model-status`,
+  BASIC: '/api/health',
+  DETAILED: '/api/health/detailed',
+  PROVIDERS: '/api/v1/providers',
+  MODEL_STATUS: '/api/v1/system/model-status',
 } as const;
 
 // ============================================================================
@@ -133,11 +143,11 @@ export const HEALTH_ENDPOINTS = {
 // ============================================================================
 
 export const ADMIN_ENDPOINTS = {
-  COSTS: `${API_BASE}/api/v1/admin/costs`,
-  PERFORMANCE: `${API_BASE}/api/v1/admin/performance`,
-  CACHE: `${API_BASE}/api/v1/admin/cache`,
-  PRODUCTION_READINESS: `${API_BASE}/api/v1/admin/production-readiness`,
-  SYSTEM_STATUS: `${API_BASE}/api/v1/admin/system/status`,
+  COSTS: '/api/v1/admin/costs',
+  PERFORMANCE: '/api/v1/admin/performance',
+  CACHE: '/api/v1/admin/cache',
+  PRODUCTION_READINESS: '/api/v1/admin/production-readiness',
+  SYSTEM_STATUS: '/api/v1/admin/system/status',
 } as const;
 
 // ============================================================================
@@ -145,7 +155,7 @@ export const ADMIN_ENDPOINTS = {
 // ============================================================================
 
 export const BUDGET_ENDPOINTS = {
-  STATUS: `${API_BASE}/api/v1/budget/status`,
+  STATUS: '/api/v1/budget/status',
 } as const;
 
 // ============================================================================

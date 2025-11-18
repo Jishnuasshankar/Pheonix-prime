@@ -25,59 +25,79 @@ interface RetryConfig extends InternalAxiosRequestConfig {
 }
 
 /**
- * Smart Base URL Detection
+ * Smart Base URL Detection with Runtime Intelligence
  * 
- * Priority order:
- * 1. VITE_BACKEND_URL from .env (if explicitly set)
- * 2. Auto-detect based on hostname:
- *    - localhost/127.0.0.1 → http://localhost:8001
- *    - emergentagent.com (preview) → Empty string (relative URLs)
- *    - Other domains → Empty string (relative URLs)
+ * CRITICAL FIX for Local + Emergent Compatibility:
+ * Priority order (RUNTIME DETECTION FIRST):
+ * 1. Hostname detection (runtime - works regardless of build-time env vars)
+ *    - emergentagent.com → Empty string (relative URLs, Kubernetes routing)
+ *    - localhost/127.0.0.1 → http://localhost:8001 (direct backend connection)
+ * 2. VITE_BACKEND_URL from .env (fallback for custom deployments)
+ * 3. Default → Empty string (relative URLs)
+ * 
+ * Why this order matters:
+ * - Vite env vars are baked in at BUILD TIME
+ * - Hostname is evaluated at RUNTIME
+ * - This allows same build to work in all environments
  * 
  * CRITICAL for Local Development:
- * - Set VITE_BACKEND_URL=http://localhost:8001 in frontend/.env
  * - Backend must be running on port 8001
- * - CORS must allow http://localhost:3000 or http://localhost:5173 (Vite ports)
+ * - CORS must allow http://localhost:3000 or http://localhost:5173
  * 
  * CRITICAL for Emergent Platform:
- * - Leave VITE_BACKEND_URL empty or comment it out
- * - Kubernetes ingress routes /api/* to backend service
+ * - Kubernetes ingress automatically routes /api/* to backend service
+ * - Uses relative URLs (empty baseURL)
  */
 const getBaseURL = (): string => {
-  // Priority 1: Explicit environment variable
-  const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
-  
-  if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
-    const trimmedUrl = envBackendUrl.trim();
-    console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL)`);
-    return trimmedUrl;
-  }
-  
-  // Priority 2: Auto-detect from hostname
   const hostname = window.location.hostname;
   
+  // Priority 1: Check Emergent platform FIRST (runtime detection)
+  if (hostname.includes('emergentagent.com')) {
+    console.log('🔗 API Base URL: (empty - Emergent platform detected, using relative URLs)');
+    return ''; // Empty = relative URLs, Kubernetes handles routing
+  }
+  
+  // Priority 2: Check localhost (runtime detection)
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     const localUrl = 'http://localhost:8001';
-    console.log(`🔗 API Base URL: ${localUrl} (auto-detected localhost)`);
+    console.log(`🔗 API Base URL: ${localUrl} (localhost detected)`);
     return localUrl;
   }
   
-  // Production/Preview: Use relative URLs
-  console.log('🔗 API Base URL: (empty - using relative URLs for production)');
+  // Priority 3: Check env var (custom deployments only)
+  const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
+    // Ignore if it's the localhost URL (prevents misconfiguration on deployments)
+    const trimmedUrl = envBackendUrl.trim();
+    if (trimmedUrl !== 'http://localhost:8001') {
+      console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL)`);
+      return trimmedUrl;
+    }
+  }
+  
+  // Priority 4: Default to relative URLs
+  console.log('🔗 API Base URL: (empty - using relative URLs)');
   return '';
 };
 
 /**
  * Main Axios instance for API communication
- * Automatically configured with base URL and default headers
+ * Automatically configured with base URL, credentials, and default headers
  * 
  * Base URL Configuration:
- * - Production/Preview: Empty string (uses relative URLs, Kubernetes routes /api to backend)
- * - Local Development: http://localhost:8001
+ * - Emergent Platform: Empty string (relative URLs, Kubernetes routes /api to backend)
+ * - Local Development: http://localhost:8001 (direct backend connection)
+ * - Custom Deployments: From VITE_BACKEND_URL env var
+ * 
+ * CRITICAL FIX: withCredentials: true
+ * - Ensures cookies and auth headers sent with CORS requests
+ * - Required for local development (frontend port 3000 → backend port 8001)
+ * - Without this, browser blocks credentials in cross-origin requests
  */
 export const apiClient = axios.create({
   baseURL: getBaseURL(),
   timeout: 30000, // 30 seconds
+  withCredentials: true, // CRITICAL for CORS with credentials
   headers: {
     'Content-Type': 'application/json',
   },

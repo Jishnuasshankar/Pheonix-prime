@@ -27,35 +27,43 @@ interface RetryConfig extends InternalAxiosRequestConfig {
 /**
  * Smart Base URL Detection
  * 
- * Automatically detects the environment and uses the correct backend URL:
- * - Local Development (localhost): http://localhost:8001
- * - Preview/Production: Relative URL (empty string - uses same domain via Kubernetes ingress)
+ * Priority order:
+ * 1. VITE_BACKEND_URL from .env (if explicitly set)
+ * 2. Auto-detect based on hostname:
+ *    - localhost/127.0.0.1 → http://localhost:8001
+ *    - emergentagent.com (preview) → Empty string (relative URLs)
+ *    - Other domains → Empty string (relative URLs)
  * 
- * This allows seamless testing in both environments without manual configuration changes.
+ * CRITICAL for Local Development:
+ * - Set VITE_BACKEND_URL=http://localhost:8001 in frontend/.env
+ * - Backend must be running on port 8001
+ * - CORS must allow http://localhost:3000 or http://localhost:5173 (Vite ports)
  * 
- * FIX: Check for non-empty string to avoid empty VITE_BACKEND_URL breaking detection
+ * CRITICAL for Emergent Platform:
+ * - Leave VITE_BACKEND_URL empty or comment it out
+ * - Kubernetes ingress routes /api/* to backend service
  */
 const getBaseURL = (): string => {
-  // Check for explicit backend URL (must be non-empty string)
+  // Priority 1: Explicit environment variable
   const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
   
   if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
     const trimmedUrl = envBackendUrl.trim();
-    console.log(`✓ Using explicit VITE_BACKEND_URL: ${trimmedUrl}`);
+    console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL)`);
     return trimmedUrl;
   }
   
-  // Auto-detect environment based on hostname
+  // Priority 2: Auto-detect from hostname
   const hostname = window.location.hostname;
   
-  // Local development: use localhost backend
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    console.log('✓ Detected localhost - using http://localhost:8001');
-    return 'http://localhost:8001';
+    const localUrl = 'http://localhost:8001';
+    console.log(`🔗 API Base URL: ${localUrl} (auto-detected localhost)`);
+    return localUrl;
   }
   
-  // Preview/Production: use relative URLs (Kubernetes ingress routes /api to backend)
-  console.log('✓ Detected production - using relative URLs');
+  // Production/Preview: Use relative URLs
+  console.log('🔗 API Base URL: (empty - using relative URLs for production)');
   return '';
 };
 
@@ -216,11 +224,34 @@ apiClient.interceptors.response.use(
         type: 'error',
         message: 'Request timeout. Check your connection.',
       });
+    } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+      // Network error (connection refused, CORS, etc.)
+      console.error('❌ Network Error Details:', {
+        message: error.message,
+        code: error.code,
+        config: {
+          url: config?.url,
+          baseURL: config?.baseURL,
+          method: config?.method,
+        }
+      });
+      
+      useUIStore.getState().showToast({
+        type: 'error',
+        message: 'Cannot connect to backend. Ensure backend is running on http://localhost:8001',
+      });
     } else if (!navigator.onLine) {
       // Offline
       useUIStore.getState().showToast({
         type: 'error',
         message: 'No internet connection.',
+      });
+    } else if (!response && error.message) {
+      // Other errors without response (CORS, DNS, etc.)
+      console.error('❌ Request Error:', error.message);
+      useUIStore.getState().showToast({
+        type: 'error',
+        message: `Request failed: ${error.message}`,
       });
     }
     

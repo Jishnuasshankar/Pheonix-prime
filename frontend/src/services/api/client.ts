@@ -27,56 +27,62 @@ interface RetryConfig extends InternalAxiosRequestConfig {
 /**
  * Smart Base URL Detection with Runtime Intelligence
  * 
- * CRITICAL FIX for Local + Emergent Compatibility:
- * Priority order (RUNTIME DETECTION FIRST):
- * 1. Hostname detection (runtime - works regardless of build-time env vars)
- *    - emergentagent.com → Empty string (relative URLs, Kubernetes routing)
- *    - localhost/127.0.0.1 → http://localhost:8001 (direct backend connection)
- * 2. VITE_BACKEND_URL from .env (fallback for custom deployments)
- * 3. Default → Empty string (relative URLs)
+ * CRITICAL FIX for Local + Emergent + Custom Deployment Compatibility:
+ * Priority order (USER CONFIGURATION FIRST):
+ * 1. Hostname detection for Emergent platform (runtime - Kubernetes routing)
+ *    - emergentagent.com → Empty string (relative URLs, Kubernetes handles routing)
+ * 2. VITE_BACKEND_URL from .env (USER'S EXPLICIT CHOICE - highest priority for non-Emergent)
+ *    - Allows full control over backend URL in any environment
+ *    - Works for local dev, custom domains, or any backend location
+ * 3. Localhost detection (runtime fallback - convention over configuration)
+ *    - localhost/127.0.0.1 → http://localhost:8001 (default local backend)
+ * 4. Default → Empty string (relative URLs)
  * 
  * Why this order matters:
- * - Vite env vars are baked in at BUILD TIME
- * - Hostname is evaluated at RUNTIME
- * - This allows same build to work in all environments
+ * - Emergent platform needs special handling (Kubernetes ingress routing)
+ * - User's .env configuration should override auto-detection (explicit > implicit)
+ * - Localhost detection is a sensible fallback when no explicit config
+ * - This supports all environments: Emergent, local dev, VSCode, custom deployments
  * 
  * CRITICAL for Local Development:
- * - Backend must be running on port 8001
- * - CORS must allow http://localhost:3000 or http://localhost:5173
+ * - Set VITE_BACKEND_URL=http://localhost:8001 (or your backend URL) in .env
+ * - Backend CORS must allow your frontend origin
+ * - Restart Vite dev server after changing .env
  * 
  * CRITICAL for Emergent Platform:
- * - Kubernetes ingress automatically routes /api/* to backend service
+ * - Hostname detection takes priority (Kubernetes ingress routing)
  * - Uses relative URLs (empty baseURL)
+ * - .env can be empty or set to http://localhost:8001 (ignored on Emergent)
  */
 const getBaseURL = (): string => {
   const hostname = window.location.hostname;
   
-  // Priority 1: Check Emergent platform FIRST (runtime detection)
+  // Priority 1: Check Emergent platform FIRST (special Kubernetes routing)
   if (hostname.includes('emergentagent.com')) {
-    console.log('🔗 API Base URL: (empty - Emergent platform detected, using relative URLs)');
-    return ''; // Empty = relative URLs, Kubernetes handles routing
+    console.log('🔗 API Base URL: (empty - Emergent platform detected, using Kubernetes ingress routing)');
+    return ''; // Empty = relative URLs, Kubernetes handles /api routing to backend
   }
   
-  // Priority 2: Check localhost (runtime detection)
+  // Priority 2: Check VITE_BACKEND_URL (USER'S EXPLICIT CONFIGURATION)
+  // This takes priority over hostname detection for non-Emergent environments
+  // Allows users to control backend URL via .env in local, VSCode, or any deployment
+  const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
+    const trimmedUrl = envBackendUrl.trim();
+    console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL - user configuration)`);
+    return trimmedUrl;
+  }
+  
+  // Priority 3: Check localhost (FALLBACK for local dev without explicit .env)
+  // Convention over configuration - assumes standard local setup
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     const localUrl = 'http://localhost:8001';
-    console.log(`🔗 API Base URL: ${localUrl} (localhost detected)`);
+    console.log(`🔗 API Base URL: ${localUrl} (localhost detected - using default port)`);
     return localUrl;
   }
   
-  // Priority 3: Check env var (custom deployments only)
-  const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
-  if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
-    // Ignore if it's the localhost URL (prevents misconfiguration on deployments)
-    const trimmedUrl = envBackendUrl.trim();
-    if (trimmedUrl !== 'http://localhost:8001') {
-      console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL)`);
-      return trimmedUrl;
-    }
-  }
-  
-  // Priority 4: Default to relative URLs
-  console.log('🔗 API Base URL: (empty - using relative URLs)');
+  // Priority 4: Default to relative URLs (for custom deployments with reverse proxy)
+  console.log('🔗 API Base URL: (empty - using relative URLs, assumes reverse proxy routing)');
   return '';
 };
 

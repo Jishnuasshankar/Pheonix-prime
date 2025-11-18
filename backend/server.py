@@ -242,6 +242,11 @@ async def lifespan(app: FastAPI):
         )
         logger.info(f"✅ Phase 8C File 13: Graceful shutdown configured (timeout: {settings.graceful_shutdown.shutdown_timeout}s)")
         
+        # Start rate limiter cleanup task
+        from middleware.simple_rate_limit import rate_limiter
+        rate_limiter.start_cleanup_task()
+        logger.info("✅ Rate limiter cleanup task started")
+        
         logger.info("✅ MasterX server started successfully with FULL PHASE 8C PRODUCTION READINESS")
         logger.info(f"📊 Available AI providers: {app.state.engine.get_available_providers()}")
         logger.info("⚡ Model selection: Fully dynamic (quality + cost + speed + availability)")
@@ -255,6 +260,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown (Phase 8C File 13: Graceful shutdown orchestration)
     logger.info("👋 Initiating graceful shutdown...")
+    
+    # Stop rate limiter cleanup task
+    from middleware.simple_rate_limit import rate_limiter
+    await rate_limiter.stop_cleanup_task()
+    logger.info("✅ Rate limiter cleanup task stopped")
     
     # Execute graceful shutdown if configured
     if hasattr(app.state, 'graceful_shutdown'):

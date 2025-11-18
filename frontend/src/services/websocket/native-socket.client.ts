@@ -53,35 +53,57 @@ class NativeSocketClient {
 
   /**
    * Initialize WebSocket connection
+   * 
+   * CRITICAL: Smart environment detection matching API client logic
+   * Priority order:
+   * 1. Emergent platform → use relative path (window.location.origin)
+   * 2. VITE_BACKEND_URL from .env (user configuration)
+   * 3. Localhost detection → ws://localhost:8001
+   * 4. Fallback → use current origin
    */
   connect(): void {
     const token = useAuthStore.getState().accessToken;
     
     if (!token) {
-      console.warn('[WebSocket] No token available for WebSocket connection');
+      console.warn('[WebSocket] No token available, skipping WebSocket connection');
+      // Don't try to connect without token - this is OK, not an error
       return;
     }
 
-    // Smart environment detection
-    let backendURL = import.meta.env.VITE_BACKEND_URL || '';
+    // Smart environment detection (matches API client logic in client.ts)
+    let backendURL = '';
+    const hostname = window.location.hostname;
     
-    // Auto-detect if not set
-    if (!backendURL) {
-      const hostname = window.location.hostname;
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        backendURL = 'http://localhost:8001';
-      } else {
-        // Use current origin for preview/production
-        backendURL = window.location.origin;
-      }
+    // Priority 1: Check Emergent platform (Kubernetes routing)
+    if (hostname.includes('emergentagent.com')) {
+      backendURL = window.location.origin;
+      console.log('[WebSocket] Emergent platform detected, using:', backendURL);
+    }
+    // Priority 2: Check VITE_BACKEND_URL (user configuration)
+    else if (import.meta.env.VITE_BACKEND_URL && typeof import.meta.env.VITE_BACKEND_URL === 'string' && import.meta.env.VITE_BACKEND_URL.trim() !== '') {
+      backendURL = import.meta.env.VITE_BACKEND_URL.trim();
+      console.log('[WebSocket] Using VITE_BACKEND_URL:', backendURL);
+    }
+    // Priority 3: Check localhost (default for local dev)
+    else if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      backendURL = 'http://localhost:8001';
+      console.log('[WebSocket] Localhost detected, using:', backendURL);
+    }
+    // Priority 4: Fallback to current origin
+    else {
+      backendURL = window.location.origin;
+      console.log('[WebSocket] Using current origin:', backendURL);
     }
     
-    // Convert HTTP to WS
+    // Convert HTTP to WS protocol
     const wsURL = backendURL
+      .replace(/^https/, 'wss')
       .replace(/^http/, 'ws')
       .replace(/\/api$/, '') + '/api/ws';
     
     this.url = `${wsURL}?token=${encodeURIComponent(token)}`;
+    
+    console.log('[WebSocket] Final WebSocket URL:', this.url.replace(/token=[^&]+/, 'token=***'));
     
     this.isIntentionalClose = false;
     this._connect();
@@ -144,21 +166,31 @@ class NativeSocketClient {
 
   /**
    * Handle WebSocket error event
+   * 
+   * CRITICAL: WebSocket errors should NOT block the UI
+   * - App should still work without WebSocket (degraded mode)
+   * - Only show toast after multiple failed attempts
    */
   private _handleError(event: Event): void {
-    console.error('[WebSocket] Error:', event);
+    console.warn('[WebSocket] Connection error (non-critical):', event);
     
+    // Increment reconnection counter
     this.reconnectAttempts++;
     
+    // Only show toast after max attempts (don't spam user)
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[WebSocket] Max reconnection attempts reached');
+      console.warn('[WebSocket] Max reconnection attempts reached - operating in degraded mode');
       
-      // Notify user via toast
+      // Notify user via toast (optional - app still works)
       import('@/store/uiStore').then(({ useUIStore }) => {
         useUIStore.getState().showToast({
-          type: 'error',
-          message: 'Real-time connection lost. Please refresh.',
+          type: 'warning',
+          message: 'Real-time features unavailable. App will still work.',
+          duration: 5000,
         });
+      }).catch(() => {
+        // Ignore if toast fails - this is truly non-critical
+        console.log('[WebSocket] Could not show toast notification');
       });
     }
   }

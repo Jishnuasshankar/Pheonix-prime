@@ -40,10 +40,27 @@ class SimpleRateLimiter:
         self.max_login_attempts_per_minute = settings.security.rate_limit_login_per_minute
         self.window = timedelta(minutes=settings.security.rate_limit_window_minutes)
         
-        # Start cleanup task
-        asyncio.create_task(self._cleanup_old_data())
+        # Cleanup task will be started by lifespan
+        self._cleanup_task = None
         
         logger.info("Simple Rate Limiter initialized")
+    
+    def start_cleanup_task(self):
+        """Start the background cleanup task"""
+        if self._cleanup_task is None:
+            self._cleanup_task = asyncio.create_task(self._cleanup_old_data())
+            logger.info("Rate limiter cleanup task started")
+    
+    async def stop_cleanup_task(self):
+        """Stop the background cleanup task"""
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+            logger.info("Rate limiter cleanup task stopped")
     
     async def _cleanup_old_data(self):
         """Clean up old request data periodically"""

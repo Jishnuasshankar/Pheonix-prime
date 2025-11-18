@@ -456,4 +456,3 @@ If signup still fails after these fixes:
 **Last Updated:** 2025-11-18
 **Status:** ✅ Fixes applied and services restarted
 **Next Step:** Test signup flow with detailed logging enabled
-"

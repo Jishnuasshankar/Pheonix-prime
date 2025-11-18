@@ -599,7 +599,7 @@ You need **TWO terminals** running simultaneously:
 
 ```bash
 # Navigate to backend
-cd /path/to/MasterX/backend
+cd /Users/Dataghost/MasterX/backend
 
 # Activate virtual environment
 source venv/bin/activate  # macOS/Linux
@@ -673,7 +673,7 @@ curl http://localhost:8001/api/health
 
 ```bash
 # Navigate to frontend
-cd /path/to/MasterX/frontend
+cd /Users/Dataghost/MasterX/frontend
 
 # Start Vite development server
 yarn dev

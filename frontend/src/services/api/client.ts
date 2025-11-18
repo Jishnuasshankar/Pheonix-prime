@@ -238,24 +238,6 @@ apiClient.interceptors.response.use(
   async (error) => {
     const config = error.config as RetryConfig;
     
-    // NEVER retry auth endpoints (registration, login, etc.) or rate-limited requests
-    if (config && config.url) {
-      if (config.url.includes('/api/auth/') || config.url.includes('/auth/')) {
-        if (import.meta.env.DEV) {
-          console.log('⚠️ Auth endpoint - no retry');
-        }
-        return Promise.reject(error);
-      }
-    }
-    
-    // Don't retry rate limit errors (429)
-    if (error.response && error.response.status === 429) {
-      if (import.meta.env.DEV) {
-        console.warn('⚠️ Rate limit exceeded - no retry');
-      }
-      return Promise.reject(error);
-    }
-    
     // Don't retry if:
     // - No config
     // - No retry count specified
@@ -283,10 +265,6 @@ apiClient.interceptors.response.use(
     // Exponential backoff: 1s, 2s, 4s, 8s...
     const delay = Math.pow(2, config.__retryCount) * 1000;
     await new Promise((resolve) => setTimeout(resolve, delay));
-    
-    if (import.meta.env.DEV) {
-      console.log(`🔄 Retry attempt ${config.__retryCount} for ${config.url}`);
-    }
     
     return apiClient(config);
   }

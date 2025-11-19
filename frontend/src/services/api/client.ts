@@ -25,85 +25,51 @@ interface RetryConfig extends InternalAxiosRequestConfig {
 }
 
 /**
- * Smart Base URL Detection with Runtime Intelligence
+ * Smart Base URL Detection
  * 
- * CRITICAL FIX for Local + Emergent + Custom Deployment Compatibility:
- * Priority order (USER CONFIGURATION FIRST):
- * 1. Hostname detection for Emergent platform (runtime - Kubernetes routing)
- *    - emergentagent.com → Empty string (relative URLs, Kubernetes handles routing)
- * 2. VITE_BACKEND_URL from .env (USER'S EXPLICIT CHOICE - highest priority for non-Emergent)
- *    - Allows full control over backend URL in any environment
- *    - Works for local dev, custom domains, or any backend location
- * 3. Localhost detection (runtime fallback - convention over configuration)
- *    - localhost/127.0.0.1 → http://localhost:8001 (default local backend)
- * 4. Default → Empty string (relative URLs)
+ * Automatically detects the environment and uses the correct backend URL:
+ * - Local Development (localhost): http://localhost:8001
+ * - Preview/Production: Relative URL (empty string - uses same domain via Kubernetes ingress)
  * 
- * Why this order matters:
- * - Emergent platform needs special handling (Kubernetes ingress routing)
- * - User's .env configuration should override auto-detection (explicit > implicit)
- * - Localhost detection is a sensible fallback when no explicit config
- * - This supports all environments: Emergent, local dev, VSCode, custom deployments
+ * This allows seamless testing in both environments without manual configuration changes.
  * 
- * CRITICAL for Local Development:
- * - Set VITE_BACKEND_URL=http://localhost:8001 (or your backend URL) in .env
- * - Backend CORS must allow your frontend origin
- * - Restart Vite dev server after changing .env
- * 
- * CRITICAL for Emergent Platform:
- * - Hostname detection takes priority (Kubernetes ingress routing)
- * - Uses relative URLs (empty baseURL)
- * - .env can be empty or set to http://localhost:8001 (ignored on Emergent)
+ * FIX: Check for non-empty string to avoid empty VITE_BACKEND_URL breaking detection
  */
 const getBaseURL = (): string => {
-  const hostname = window.location.hostname;
-  
-  // Priority 1: Check Emergent platform FIRST (special Kubernetes routing)
-  if (hostname.includes('emergentagent.com')) {
-    console.log('🔗 API Base URL: (empty - Emergent platform detected, using Kubernetes ingress routing)');
-    return ''; // Empty = relative URLs, Kubernetes handles /api routing to backend
-  }
-  
-  // Priority 2: Check VITE_BACKEND_URL (USER'S EXPLICIT CONFIGURATION)
-  // This takes priority over hostname detection for non-Emergent environments
-  // Allows users to control backend URL via .env in local, VSCode, or any deployment
+  // Check for explicit backend URL (must be non-empty string)
   const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
+  
   if (envBackendUrl && typeof envBackendUrl === 'string' && envBackendUrl.trim() !== '') {
     const trimmedUrl = envBackendUrl.trim();
-    console.log(`🔗 API Base URL: ${trimmedUrl} (from VITE_BACKEND_URL - user configuration)`);
+    console.log(`✓ Using explicit VITE_BACKEND_URL: ${trimmedUrl}`);
     return trimmedUrl;
   }
   
-  // Priority 3: Check localhost (FALLBACK for local dev without explicit .env)
-  // Convention over configuration - assumes standard local setup
+  // Auto-detect environment based on hostname
+  const hostname = window.location.hostname;
+  
+  // Local development: use localhost backend
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    const localUrl = 'http://localhost:8001';
-    console.log(`🔗 API Base URL: ${localUrl} (localhost detected - using default port)`);
-    return localUrl;
+    console.log('✓ Detected localhost - using http://localhost:8001');
+    return 'http://localhost:8001';
   }
   
-  // Priority 4: Default to relative URLs (for custom deployments with reverse proxy)
-  console.log('🔗 API Base URL: (empty - using relative URLs, assumes reverse proxy routing)');
+  // Preview/Production: use relative URLs (Kubernetes ingress routes /api to backend)
+  console.log('✓ Detected production - using relative URLs');
   return '';
 };
 
 /**
  * Main Axios instance for API communication
- * Automatically configured with base URL, credentials, and default headers
+ * Automatically configured with base URL and default headers
  * 
  * Base URL Configuration:
- * - Emergent Platform: Empty string (relative URLs, Kubernetes routes /api to backend)
- * - Local Development: http://localhost:8001 (direct backend connection)
- * - Custom Deployments: From VITE_BACKEND_URL env var
- * 
- * CRITICAL FIX: withCredentials: true
- * - Ensures cookies and auth headers sent with CORS requests
- * - Required for local development (frontend port 3000 → backend port 8001)
- * - Without this, browser blocks credentials in cross-origin requests
+ * - Production/Preview: Empty string (uses relative URLs, Kubernetes routes /api to backend)
+ * - Local Development: http://localhost:8001
  */
 export const apiClient = axios.create({
   baseURL: getBaseURL(),
   timeout: 30000, // 30 seconds
-  withCredentials: true, // CRITICAL for CORS with credentials
   headers: {
     'Content-Type': 'application/json',
   },
@@ -250,34 +216,11 @@ apiClient.interceptors.response.use(
         type: 'error',
         message: 'Request timeout. Check your connection.',
       });
-    } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
-      // Network error (connection refused, CORS, etc.)
-      console.error('❌ Network Error Details:', {
-        message: error.message,
-        code: error.code,
-        config: {
-          url: config?.url,
-          baseURL: config?.baseURL,
-          method: config?.method,
-        }
-      });
-      
-      useUIStore.getState().showToast({
-        type: 'error',
-        message: 'Cannot connect to backend. Ensure backend is running on http://localhost:8001',
-      });
     } else if (!navigator.onLine) {
       // Offline
       useUIStore.getState().showToast({
         type: 'error',
         message: 'No internet connection.',
-      });
-    } else if (!response && error.message) {
-      // Other errors without response (CORS, DNS, etc.)
-      console.error('❌ Request Error:', error.message);
-      useUIStore.getState().showToast({
-        type: 'error',
-        message: `Request failed: ${error.message}`,
       });
     }
     

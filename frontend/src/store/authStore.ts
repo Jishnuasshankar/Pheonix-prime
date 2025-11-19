@@ -121,20 +121,13 @@ export const useAuthStore = create<AuthState>()(
         
         try {
           console.log('🔐 Starting login process...');
-          console.log('📡 Backend URL:', import.meta.env.VITE_BACKEND_URL || 'auto-detected');
           
           // Step 1: Authenticate with backend
           const response = await authAPI.login(credentials);
           console.log('✓ Login API call successful, tokens received');
           
-          // Step 2: Store tokens in localStorage FIRST (synchronously)
-          // CRITICAL: Do this BEFORE setting Zustand state
-          // The API interceptor checks localStorage as fallback, so this ensures token is always available
-          localStorage.setItem('jwt_token', response.access_token);
-          localStorage.setItem('refresh_token', response.refresh_token);
-          console.log('✓ Tokens stored in localStorage (synchronous)');
-          
-          // Step 3: Set tokens in Zustand state
+          // Step 2: CRITICAL - Set tokens in state FIRST
+          // This ensures the API interceptor has access when we call getCurrentUser
           set({
             accessToken: response.access_token,
             refreshToken: response.refresh_token,
@@ -143,17 +136,25 @@ export const useAuthStore = create<AuthState>()(
           });
           console.log('✓ Tokens set in Zustand state');
           
-          // Step 4: Fetch user profile with token attached
-          // Token is now guaranteed to be in localStorage, so interceptor can access it
+          // Step 3: Store in localStorage for interceptor fallback and persistence
+          localStorage.setItem('jwt_token', response.access_token);
+          localStorage.setItem('refresh_token', response.refresh_token);
+          console.log('✓ Tokens stored in localStorage');
+          
+          // Step 4: Small delay to ensure Zustand state propagates to interceptors
+          // This prevents race condition where getCurrentUser fires before token is available
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          // Step 5: Fetch user profile with token attached
           console.log('→ Fetching user profile...');
           const apiUser = await authAPI.getCurrentUser();
           console.log('✓ User profile fetched:', apiUser);
           
-          // Step 5: Adapt backend response to frontend User type
+          // Step 6: Adapt backend response to frontend User type
           const user = adaptUserApiResponse(apiUser);
           console.log('✓ User data adapted for frontend');
           
-          // Step 6: Update state with user info
+          // Step 7: Update state with user info
           set({
             user,
             isLoading: false,
@@ -163,12 +164,6 @@ export const useAuthStore = create<AuthState>()(
           console.log('✅ Login complete! User:', user.name);
         } catch (error: any) {
           console.error('❌ Login failed:', error);
-          console.error('Error details:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            code: error.code,
-          });
           
           // Clear any stored tokens on error
           localStorage.removeItem('jwt_token');
@@ -177,16 +172,12 @@ export const useAuthStore = create<AuthState>()(
           // Parse error message for better UX
           let errorMessage = 'Login failed. Please try again.';
           
-          if (error.code === 'ERR_NETWORK') {
-            errorMessage = 'Cannot connect to backend. Make sure backend is running on http://localhost:8001';
-          } else if (error.response?.status === 401) {
+          if (error.response?.status === 401) {
             errorMessage = 'Invalid email or password';
           } else if (error.response?.status === 423) {
             errorMessage = 'Account temporarily locked. Please try again in 15 minutes.';
           } else if (error.response?.status === 429) {
             errorMessage = 'Too many login attempts. Please try again later.';
-          } else if (error.message?.includes('Network Error')) {
-            errorMessage = 'Network error. Check if backend is running and CORS is configured.';
           } else if (error.message) {
             errorMessage = error.message;
           }
@@ -222,19 +213,12 @@ export const useAuthStore = create<AuthState>()(
         
         try {
           console.log('📝 Starting signup process...');
-          console.log('📡 Backend URL:', import.meta.env.VITE_BACKEND_URL || 'auto-detected');
           
           // Step 1: Register with backend
           const response = await authAPI.signup(data);
           console.log('✓ Signup API call successful, tokens received');
           
-          // Step 2: Store tokens in localStorage FIRST (synchronously)
-          // CRITICAL: Do this BEFORE setting Zustand state
-          localStorage.setItem('jwt_token', response.access_token);
-          localStorage.setItem('refresh_token', response.refresh_token);
-          console.log('✓ Tokens stored in localStorage (synchronous)');
-          
-          // Step 3: Set tokens in Zustand state
+          // Step 2: CRITICAL - Set tokens in state FIRST
           set({
             accessToken: response.access_token,
             refreshToken: response.refresh_token,
@@ -243,16 +227,24 @@ export const useAuthStore = create<AuthState>()(
           });
           console.log('✓ Tokens set in Zustand state');
           
-          // Step 4: Fetch user profile with token attached
+          // Step 3: Store tokens in localStorage for backup and interceptor fallback
+          localStorage.setItem('jwt_token', response.access_token);
+          localStorage.setItem('refresh_token', response.refresh_token);
+          console.log('✓ Tokens stored in localStorage');
+          
+          // Step 4: Small delay to ensure state propagates
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
+          // Step 5: Fetch user profile with token attached
           console.log('→ Fetching user profile...');
           const apiUser = await authAPI.getCurrentUser();
           console.log('✓ User profile fetched:', apiUser);
           
-          // Step 5: Adapt backend response to frontend User type
+          // Step 6: Adapt backend response to frontend User type
           const user = adaptUserApiResponse(apiUser);
           console.log('✓ User data adapted for frontend');
           
-          // Step 6: Update state with user info
+          // Step 7: Update state with user info
           set({
             user,
             isLoading: false,
@@ -262,12 +254,6 @@ export const useAuthStore = create<AuthState>()(
           console.log('✅ Signup complete! Welcome,', user.name);
         } catch (error: any) {
           console.error('❌ Signup failed:', error);
-          console.error('Error details:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            code: error.code,
-          });
           
           // Clear tokens on error
           localStorage.removeItem('jwt_token');
@@ -276,9 +262,7 @@ export const useAuthStore = create<AuthState>()(
           // Parse error message
           let errorMessage = 'Signup failed. Please try again.';
           
-          if (error.code === 'ERR_NETWORK') {
-            errorMessage = 'Cannot connect to backend. Make sure backend is running on http://localhost:8001';
-          } else if (error.response?.status === 400) {
+          if (error.response?.status === 400) {
             if (error.response.data?.detail?.includes('email')) {
               errorMessage = 'This email is already registered';
             } else {
@@ -286,8 +270,6 @@ export const useAuthStore = create<AuthState>()(
             }
           } else if (error.response?.status === 429) {
             errorMessage = 'Too many signup attempts. Please try again later.';
-          } else if (error.message?.includes('Network Error')) {
-            errorMessage = 'Network error. Check if backend is running and CORS is configured.';
           } else if (error.message) {
             errorMessage = error.message;
           }

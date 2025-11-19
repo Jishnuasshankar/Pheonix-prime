@@ -242,10 +242,10 @@ async def lifespan(app: FastAPI):
         )
         logger.info(f"✅ Phase 8C File 13: Graceful shutdown configured (timeout: {settings.graceful_shutdown.shutdown_timeout}s)")
         
-        # Start rate limiter cleanup task
+        # Rate limiter cleanup task starts automatically in __init__
         from middleware.simple_rate_limit import rate_limiter
-        rate_limiter.start_cleanup_task()
-        logger.info("✅ Rate limiter cleanup task started")
+        # rate_limiter.start_cleanup_task()  # Already started in __init__
+        logger.info("✅ Rate limiter initialized (cleanup task auto-starts)")
         
         logger.info("✅ MasterX server started successfully with FULL PHASE 8C PRODUCTION READINESS")
         logger.info(f"📊 Available AI providers: {app.state.engine.get_available_providers()}")

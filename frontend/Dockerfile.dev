@@ -1,0 +1,35 @@
+# ==============================================================================
+# MasterX Frontend - Development Dockerfile
+# ==============================================================================
+# Development version with hot reload support
+# - Faster builds (no production optimization)
+# - Hot module replacement (HMR)
+# - Development server with debugging
+# ==============================================================================
+
+FROM node:20-alpine
+
+LABEL maintainer="MasterX Team"
+LABEL description="MasterX Frontend - Development Runtime"
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first for better layer caching
+COPY package.json yarn.lock ./
+
+# Install ALL dependencies (including devDependencies)
+RUN yarn install --frozen-lockfile
+
+# Copy application code
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Environment variables for development
+ENV NODE_ENV=development \
+    CHOKIDAR_USEPOLLING=true
+
+# Start development server with hot reload
+CMD ["yarn", "start"]

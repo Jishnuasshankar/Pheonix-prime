@@ -1,0 +1,108 @@
+# ==============================================================================
+# Backend .dockerignore - Exclude unnecessary files from Docker context
+# ==============================================================================
+# Reduces build context size and speeds up builds
+# Following Big Tech standards for clean builds
+# ==============================================================================
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+virtualenv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+.vs/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.log
+test-results/
+.mypy_cache/
+.ruff_cache/
+
+# Documentation (not needed in container)
+*.md
+docs/
+*.rst
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Environment files (use docker-compose env instead)
+.env.local
+.env.*.local
+.env.development
+.env.test
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+wheels/
+*.egg
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.bak
+*.swp
+
+# Logs (will be mounted as volumes)
+logs/
+*.log
+
+# Database files (will be in separate container)
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker files (not needed inside container)
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Additional Python files
+pip-log.txt
+pip-delete-this-directory.txt
+.installed.cfg
+*.manifest
+*.spec

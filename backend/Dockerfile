@@ -1,27 +1,20 @@
 # ==============================================================================
 # MasterX Backend - Production-Ready Multi-Stage Dockerfile
 # ==============================================================================
-# Following Big Tech Standards: Google/Meta/Amazon
-# - Multi-stage builds for minimal image size
-# - Layer caching optimization for fast rebuilds
-# - Security hardening (non-root user, minimal attack surface)
-# - Health checks for container orchestration
-# - ML model pre-caching for faster startup
-# ==============================================================================
 
 # ==============================================================================
 # STAGE 1: Builder - Install dependencies and build environment
 # ==============================================================================
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 LABEL maintainer="MasterX Team"
-LABEL description="MasterX AI-Powered Adaptive Learning Platform - Backend Builder"
 
-# Set working directory
-WORKDIR /app
+WORKDIR /build
 
-# Install system dependencies required for building Python packages
-# Required for: PyTorch, transformers, onnxruntime, scikit-learn, etc.
+# Build arguments
+ARG PRELOAD_ML_MODELS=true
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -31,80 +24,117 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy only requirements first for better layer caching
-# This layer is cached unless requirements.txt changes
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements
 COPY requirements.txt .
 
 # Install Python dependencies
-# --no-cache-dir: Don't store pip cache (reduces image size)
-# --upgrade: Ensure latest compatible versions
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Pre-download ML models during build for faster startup (optional)
-# Comment out if you prefer to download on first run
-# RoBERTa model for emotion detection (~500MB)
-RUN python -c "from transformers import AutoModel, AutoTokenizer; \
-    AutoModel.from_pretrained('SamLowe/roberta-base-go_emotions'); \
-    AutoTokenizer.from_pretrained('SamLowe/roberta-base-go_emotions')" || \
-    echo "⚠️ ML model pre-download skipped (will download on first run)"
+# Pre-download ML models (Conditional)
+RUN mkdir -p /opt/ml_cache && \
+    if [ "$PRELOAD_ML_MODELS" = "true" ]; then \
+        TRANSFORMERS_CACHE=/opt/ml_cache \
+        HF_HOME=/opt/ml_cache \
+        python -c "from transformers import AutoModel, AutoTokenizer; \
+            AutoModel.from_pretrained('SamLowe/roberta-base-go_emotions'); \
+            AutoTokenizer.from_pretrained('SamLowe/roberta-base-go_emotions')" && \
+        echo '✅ ML models pre-loaded successfully'; \
+    else \
+        echo '⏭️ ML model pre-loading skipped (PRELOAD_ML_MODELS=false)'; \
+    fi
 
 # ==============================================================================
 # STAGE 2: Runtime - Minimal production image
 # ==============================================================================
-FROM python:3.11-slim
+FROM python:3.11-slim AS runtime
 
 LABEL maintainer="MasterX Team"
-LABEL description="MasterX AI-Powered Adaptive Learning Platform - Backend Runtime"
+LABEL description="MasterX AI-Powered Platform - Backend Runtime"
 LABEL version="1.0.0"
 
-# Set working directory
+# Build arguments for User ID consistency
+ARG APP_USER=masterx
+ARG APP_UID=1000
+ARG APP_GID=1000
+
 WORKDIR /app
 
-# Install only runtime system dependencies (minimal)
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Create non-root user
+RUN groupadd -g ${APP_GID} ${APP_USER} && \
+    useradd -m -u ${APP_UID} -g ${APP_GID} -s /bin/bash ${APP_USER}
 
-# Copy ML models from builder (if pre-downloaded)
-COPY --from=builder /root/.cache /root/.cache
+# Copy virtual environment
+COPY --from=builder /opt/venv /opt/venv
 
-# Create non-root user for security (following principle of least privilege)
-RUN useradd -m -u 1000 masterx && \
-    chown -R masterx:masterx /app /root/.cache
+# Copy ML models
+COPY --from=builder --chown=${APP_USER}:${APP_USER} /opt/ml_cache /home/${APP_USER}/.cache
+
+# Set path
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
-# Use --chown to set ownership during copy
-COPY --chown=masterx:masterx . .
+COPY . .
 
-# Create directories for logs and temp files
-RUN mkdir -p /app/logs /app/temp && \
-    chown -R masterx:masterx /app/logs /app/temp
+# ------------------------------------------------------------------------------
+# 🔴 CRITICAL FIX HERE
+# We explicitly create /app/logs so Docker doesn't fail trying to create 
+# the mount point on a Read-Only Filesystem.
+# ------------------------------------------------------------------------------
+RUN mkdir -p /app/temp /app/data /app/logs && \
+    chown -R ${APP_USER}:${APP_USER} /app && \
+    chmod -R 755 /app/temp /app/data /app/logs
+
+# Cleanup
+RUN rm -rf /app/.git /app/.gitignore /app/__pycache__ \
+    /app/*.md /app/.env* /app/Dockerfile* /app/docker-compose* \
+    /app/.dockerignore /app/tests /app/.pytest_cache 2>/dev/null || true
 
 # Switch to non-root user
-USER masterx
+USER ${APP_USER}
 
-# Expose port (8001 for FastAPI)
+# Expose port
 EXPOSE 8001
 
-# Health check for container orchestration
-# Kubernetes/Docker Swarm will use this to determine container health
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8001/api/health || exit 1
-
-# Environment variables (can be overridden by docker-compose)
+# Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LOG_LEVEL=INFO \
-    WORKERS=1
+    WORKERS=4 \
+    MAX_WORKERS=8 \
+    TIMEOUT=120 \
+    GRACEFUL_TIMEOUT=30 \
+    KEEP_ALIVE=5 \
+    HOST=0.0.0.0 \
+    PORT=8001 \
+    TRANSFORMERS_CACHE=/home/masterx/.cache \
+    HF_HOME=/home/masterx/.cache
 
-# Start command (single worker for development, override in production)
-# Production should use: --workers 4 --worker-class uvicorn.workers.UvicornWorker
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -sf http://localhost:${PORT}/api/health || exit 1
+
+# Entrypoint
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Command
+CMD ["sh", "-c", "uvicorn server:app --host ${HOST} --port ${PORT} --workers ${WORKERS} --timeout-keep-alive ${KEEP_ALIVE} --limit-concurrency 100 --limit-max-requests 10000"]

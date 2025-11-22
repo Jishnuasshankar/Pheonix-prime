@@ -59,6 +59,12 @@ docs/
 .env.*.local
 .env.development
 .env.test
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets/
 
 # OS-specific files
 .DS_Store

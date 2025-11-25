@@ -252,9 +252,9 @@ class MasterXEngine:
             )
             logger.info(f"📂 Detected category: {category}")
             
-            # ====================================================================
-            # PHASE 3.5: RAG - REAL-TIME WEB KNOWLEDGE (Perplexity-Inspired)
-            # ====================================================================
+            # =========================================
+            # PHASE 3.5: RAG - REAL-TIME WEB KNOWLEDGE 
+            # =========================================
             rag_context = None
             rag_time_ms = 0.0
             
@@ -438,7 +438,7 @@ class MasterXEngine:
                 "total_ms": (time.time() - start_time) * 1000
             }
             
-            # Add RAG metadata (Perplexity-inspired)
+            # Add RAG metadata 
             # Store as custom attributes for server to access
             if rag_context:
                 response.rag_enabled = True
@@ -452,7 +452,7 @@ class MasterXEngine:
                 response.search_provider = None
             
             # ====================================================================
-            # GENERATE FOLLOW-UP QUESTIONS (Perplexity-inspired ML)
+            # GENERATE FOLLOW-UP QUESTIONS (ML)
             # ====================================================================
             logger.info(f"💡 Generating ML-based follow-up questions...")
             followup_start = time.time()
@@ -594,7 +594,7 @@ Provide a helpful, clear, and supportive response."""
         """
         Phase 3: Advanced prompt enhancement with context and difficulty
         
-        ENHANCED (Perplexity-Inspired):
+        ENHANCED :
         - Explicit continuity instructions
         - Context-aware response requirements
         - Building on previous conversation
@@ -1043,7 +1043,7 @@ Remember: This is a CONTINUING conversation. Build on what came before."""
         """
         Adjust based on student's emotional/learning state
         
-        ENHANCED (Perplexity-Inspired):
+        ENHANCED :
         - More aggressive token allocation for struggling students
         - Ensure minimum response length requirements
         - Prioritize student support over efficiency

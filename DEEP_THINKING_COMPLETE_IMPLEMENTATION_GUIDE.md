@@ -55,7 +55,7 @@ This is a **comprehensive, production-ready implementation guide** that fills AL
 
 **Files to Upgrade:**
 6. `backend/core/engine.py` - Integrate reasoning calls
-7. `backend/core/models.py` - Add reasoning models
+7. `backend/core/models.py` - Add reasoning models 🧑‍💻 Current Focus
 8. `backend/server.py` - Add reasoning endpoints
 
 **Total Effort:** 2,500-3,000 lines (all production-ready)

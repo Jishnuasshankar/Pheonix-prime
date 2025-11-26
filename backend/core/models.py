@@ -433,6 +433,56 @@ class ChatResponse(BaseModel):
     suggested_questions: Optional[List[SuggestedQuestion]] = None
 
 
+class ReasoningRequest(BaseModel):
+    """Request for reasoning-enabled chat with visible thinking"""
+    user_id: str
+    session_id: Optional[str] = None
+    message: str
+    enable_reasoning: bool = Field(default=True, description="Enable visible reasoning")
+    thinking_mode: Optional[str] = Field(None, description="Force mode: system1, system2, hybrid, or auto")
+    max_reasoning_depth: int = Field(default=5, ge=1, le=10, description="Maximum reasoning steps")
+    context: Optional[Dict[str, Any]] = None
+
+
+class ReasoningResponse(BaseModel):
+    """Enhanced chat response with visible reasoning chain"""
+    session_id: str
+    message: str
+    
+    # Reasoning data
+    reasoning_enabled: bool = Field(default=False)
+    reasoning_chain: Optional[Dict[str, Any]] = None  # ReasoningChain.to_dict_for_frontend()
+    thinking_mode: Optional[str] = None
+    
+    # Standard metadata
+    emotion_state: Optional[EmotionState] = None
+    provider_used: str
+    response_time_ms: float
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Token usage
+    tokens_used: Optional[int] = None
+    cost: Optional[float] = None
+    
+    # Context
+    category_detected: Optional[str] = None
+    context_retrieved: Optional[ContextInfo] = None
+    ability_info: Optional[AbilityInfo] = None
+    
+    # Processing metadata
+    cached: bool = False
+    processing_breakdown: Optional[Dict[str, float]] = None
+    
+    # RAG metadata
+    rag_enabled: bool = False
+    citations: Optional[List[str]] = None
+    sources_count: Optional[int] = None
+    search_provider: Optional[str] = None
+    
+    # Follow-up questions
+    suggested_questions: Optional[List[SuggestedQuestion]] = None
+
+
 # ============================================================================
 # AUTHENTICATION API MODELS
 # ============================================================================
@@ -571,9 +621,11 @@ INDEXES = {
         {"keys": [("user_id", 1), ("date", -1)]}
     ],
     "reasoning_sessions": [
-        {"keys": [("user_id", 1), ("timestamp", -1)]},
-        {"keys": [("session_id", 1), ("timestamp", -1)]},
-        {"keys": [("thinking_mode", 1), ("timestamp", -1)]}
+        {"keys": [("user_id", 1), ("created_at", -1)]},
+        {"keys": [("session_id", 1)]},
+        {"keys": [("thinking_mode", 1)]},
+        {"keys": [("complexity_score", 1)]},
+        {"keys": [("created_at", -1)]}
     ]
 }
 
@@ -592,24 +644,37 @@ class ReasoningSessionDocument(BaseModel):
     user_id: str
     session_id: str
     query: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Thinking mode
+    thinking_mode: str = Field(..., description="system1, system2, or hybrid")
     
     # Reasoning chain
-    thinking_mode: str  # system1, system2, hybrid
     reasoning_steps: List[Dict[str, Any]] = Field(default_factory=list)
+    reasoning_depth: int = Field(default=0, ge=0)
     conclusion: Optional[str] = None
     
-    # Metrics
-    total_steps: int = 0
-    processing_time_ms: float = 0.0
-    token_budget_allocated: int = 0
-    token_budget_used: int = 0
-    complexity_score: float = 0.0
-    confidence_score: float = 0.0
-    
-    # Context
+    # Emotion context
     emotion_state: Optional[Dict[str, Any]] = None
-    cognitive_load: float = 0.0
+    cognitive_load: float = Field(default=0.5, ge=0.0, le=1.0)
+    learning_readiness: str = Field(default="moderate_readiness")
+    
+    # Token usage
+    token_budget_allocated: int = Field(default=0, ge=0)
+    token_budget_used: int = Field(default=0, ge=0)
+    reasoning_tokens: int = Field(default=0, ge=0)
+    response_tokens: int = Field(default=0, ge=0)
+    
+    # Performance
+    complexity_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    total_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    processing_time_ms: float = Field(default=0.0, ge=0.0)
+    
+    # Quality feedback (optional, from user)
+    user_feedback_rating: Optional[int] = Field(None, ge=1, le=5)
+    user_feedback_helpful: Optional[bool] = None
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
         populate_by_name = True

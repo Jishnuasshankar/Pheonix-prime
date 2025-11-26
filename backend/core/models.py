@@ -569,5 +569,63 @@ INDEXES = {
     "cost_tracking": [
         {"keys": [("date", -1), ("provider", 1)]},
         {"keys": [("user_id", 1), ("date", -1)]}
+    ],
+    "reasoning_sessions": [
+        {"keys": [("user_id", 1), ("timestamp", -1)]},
+        {"keys": [("session_id", 1), ("timestamp", -1)]},
+        {"keys": [("thinking_mode", 1), ("timestamp", -1)]}
     ]
 }
+
+
+# ============================================================================
+# DEEP THINKING / REASONING MODELS
+# ============================================================================
+
+class ReasoningSessionDocument(BaseModel):
+    """
+    Reasoning session - MongoDB reasoning_sessions collection
+    
+    Stores complete reasoning chains for analysis and improvement
+    """
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), alias="_id")
+    user_id: str
+    session_id: str
+    query: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Reasoning chain
+    thinking_mode: str  # system1, system2, hybrid
+    reasoning_steps: List[Dict[str, Any]] = Field(default_factory=list)
+    conclusion: Optional[str] = None
+    
+    # Metrics
+    total_steps: int = 0
+    processing_time_ms: float = 0.0
+    token_budget_allocated: int = 0
+    token_budget_used: int = 0
+    complexity_score: float = 0.0
+    confidence_score: float = 0.0
+    
+    # Context
+    emotion_state: Optional[Dict[str, Any]] = None
+    cognitive_load: float = 0.0
+    
+    class Config:
+        populate_by_name = True
+
+
+class ReasoningAnalytics(BaseModel):
+    """
+    Aggregated reasoning analytics
+    
+    Used for performance monitoring and improvement
+    """
+    date: str  # YYYY-MM-DD
+    thinking_mode_distribution: Dict[str, int] = Field(default_factory=dict)
+    avg_steps_per_session: float = 0.0
+    avg_processing_time_ms: float = 0.0
+    avg_complexity: float = 0.0
+    avg_confidence: float = 0.0
+    total_sessions: int = 0
+

@@ -48,19 +48,27 @@ class MetacognitiveController:
     - MCTSReasoningEngine (reasoning generation)
     """
     
-    def __init__(self, db=None):
+    def __init__(self, db=None, provider_manager=None):
         """
         Initialize metacognitive controller
         
         Args:
             db: MongoDB database (optional, for session persistence)
+            provider_manager: AI provider manager for reasoning generation
         """
         self.db = db
+        self.provider_manager = provider_manager
         
         # Initialize reasoning components
         self.dual_process = DualProcessEngine(db=db)
         self.budget_allocator = DynamicBudgetAllocator()
-        self.mcts_engine = MCTSReasoningEngine()
+        
+        # Only initialize MCTS if provider_manager is available
+        if provider_manager:
+            self.mcts_engine = MCTSReasoningEngine(provider_manager=provider_manager)
+        else:
+            self.mcts_engine = None
+            logger.warning("⚠️ MCTS engine not initialized (no provider_manager)")
         
         logger.info("✅ MetacognitiveController initialized (Full Implementation)")
     
@@ -155,13 +163,22 @@ class MetacognitiveController:
         )
         
         try:
-            # Generate reasoning steps via MCTS
-            reasoning_path = await self.mcts_engine.search(
-                query=query,
-                max_depth=self._calculate_reasoning_depth(thinking_mode, token_budget),
-                max_iterations=self._calculate_mcts_iterations(thinking_mode),
-                provider_client=provider_client
-            )
+            # Generate reasoning steps via MCTS (if available)
+            if self.mcts_engine:
+                reasoning_path = await self.mcts_engine.search(
+                    query=query,
+                    max_depth=self._calculate_reasoning_depth(thinking_mode, token_budget),
+                    max_iterations=self._calculate_mcts_iterations(thinking_mode),
+                    provider_client=provider_client
+                )
+            else:
+                # Fallback: Create simple reasoning path without MCTS
+                from .mcts_engine import ReasoningPath
+                reasoning_path = ReasoningPath(
+                    steps=[query],
+                    total_value=0.5,
+                    confidence=0.7
+                )
             
             # Convert MCTS path to reasoning steps
             for i, node_content in enumerate(reasoning_path.steps, 1):

@@ -31,6 +31,15 @@ from utils.errors import MasterXError
 from utils.cost_tracker import cost_tracker
 from utils.database import get_database
 
+# PHASE 4: Deep Thinking Integration
+from core.reasoning import (
+    MetacognitiveController,
+    DualProcessEngine,
+    ThinkingMode,
+    ReasoningChain,
+    ReasoningStep
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,6 +81,11 @@ class MasterXEngine:
         self.adaptive_engine = None
         self.rag_engine = None  # RAG engine for real-time knowledge
         self.ml_question_generator = None  # ML-based question generator (Perplexity-grade)
+        
+        # Phase 4: Deep Thinking components
+        self.metacognitive_controller = None  # Reasoning orchestrator
+        self.reasoning_enabled = False  # Enable/disable reasoning per request
+        
         self._db_initialized = False
         
         # Token management
@@ -79,11 +93,11 @@ class MasterXEngine:
         # Use 90% of max as safe upper limit
         self.safe_max = int(model_max_tokens * 0.90)
         
-        logger.info("✅ MasterXEngine initialized (Phase 3: Full Intelligence)")
+        logger.info("✅ MasterXEngine initialized (Phase 4: Deep Thinking Ready)")
     
     async def initialize_intelligence_layer(self, db):
         """
-        Initialize Phase 3 intelligence components with database
+        Initialize Phase 3 & 4 intelligence components with database
         
         Args:
             db: MongoDB database instance
@@ -109,13 +123,22 @@ class MasterXEngine:
                     db=db
                 )
                 
-                # Ensure question_interactions collection exists
+                # Phase 4: Initialize Deep Thinking components
+                self.metacognitive_controller = MetacognitiveController(db=db)
+                
+                # Ensure collections exist
                 await db.create_collection("question_interactions", check_exists=False)
                 await db.question_interactions.create_index("question_hash")
                 await db.question_interactions.create_index("timestamp")
                 
+                # Phase 4: Reasoning sessions collection
+                await db.create_collection("reasoning_sessions", check_exists=False)
+                await db.reasoning_sessions.create_index("user_id")
+                await db.reasoning_sessions.create_index("session_id")
+                await db.reasoning_sessions.create_index("timestamp")
+                
                 self._db_initialized = True
-                logger.info("✅ Intelligence layer initialized (context + adaptive + RAG + ML questions)")
+                logger.info("✅ Intelligence layer initialized (Phase 4: Full System with Deep Thinking)")
             except Exception as e:
                 logger.error(f"Failed to initialize intelligence layer: {e}")
                 raise
@@ -504,6 +527,445 @@ class MasterXEngine:
                 }
             )
     
+    async def process_request_with_reasoning(
+        self,
+        user_id: str,
+        message: str,
+        session_id: str,
+        context: Optional[dict] = None,
+        subject: str = "general",
+        enable_reasoning: bool = True
+    ) -> AIResponse:
+        """
+        PHASE 4: Process request with Deep Thinking reasoning
+        
+        Enhanced version of process_request that includes:
+        1. Thinking mode selection (System 1 vs System 2)
+        2. Dynamic token budget allocation
+        3. MCTS-based reasoning chain generation
+        4. Visible step-by-step thinking process
+        5. Reasoning-enhanced AI response
+        
+        Flow:
+        1-2. Same as process_request (context + emotion)
+        3. Select thinking mode (System 1/2/Hybrid)
+        4. Allocate token budget (reasoning vs response)
+        5. Generate reasoning chain (if System 2)
+        6. Enhanced AI response with reasoning context
+        7. Store reasoning session
+        8. Return response with reasoning chain
+        
+        Args:
+            user_id: User identifier
+            message: User message
+            session_id: Session identifier
+            context: Additional context (optional)
+            subject: Learning subject/topic
+            enable_reasoning: Enable deep thinking (default: True)
+        
+        Returns:
+            AIResponse with reasoning chain
+        """
+        
+        start_time = time.time()
+        
+        try:
+            # Ensure intelligence layer is initialized
+            if not self._db_initialized or not self.metacognitive_controller:
+                logger.warning("Deep Thinking not initialized, falling back to standard processing")
+                return await self.process_request(user_id, message, session_id, context, subject)
+            
+            # ====================================================================
+            # PHASE 4 STEP 1-2: STANDARD PROCESSING (Context + Emotion)
+            # ====================================================================
+            logger.info(f"🧠 Phase 4: Processing with Deep Thinking enabled={enable_reasoning}")
+            
+            # Get context (same as Phase 3)
+            context_start = time.time()
+            conversation_context = await self.context_manager.get_context(
+                session_id=session_id,
+                include_semantic=True,
+                semantic_query=message
+            )
+            
+            recent_messages = conversation_context.get('recent_messages', [])
+            relevant_messages = conversation_context.get('relevant_messages', [])
+            context_time_ms = (time.time() - context_start) * 1000
+            
+            # Emotion analysis (same as Phase 3)
+            emotion_start = time.time()
+            emotion_result = await self.emotion_engine.analyze_emotion(
+                text=message,
+                user_id=user_id,
+                session_id=session_id,
+                interaction_context=context
+            )
+            emotion_time_ms = (time.time() - emotion_start) * 1000
+            
+            # Map to LearningReadiness
+            readiness_map = {
+                "optimal": LearningReadiness.OPTIMAL_READINESS,
+                "good": LearningReadiness.HIGH_READINESS,
+                "moderate": LearningReadiness.MODERATE_READINESS,
+                "low": LearningReadiness.LOW_READINESS,
+                "blocked": LearningReadiness.NOT_READY
+            }
+            
+            emotion_state = EmotionState(
+                primary_emotion=emotion_result.primary_emotion,
+                arousal=emotion_result.pad_dimensions.arousal,
+                valence=emotion_result.pad_dimensions.pleasure,
+                learning_readiness=readiness_map.get(
+                    emotion_result.learning_readiness,
+                    LearningReadiness.MODERATE_READINESS
+                )
+            )
+            
+            # Adaptive difficulty (same as Phase 3)
+            difficulty_start = time.time()
+            ability = await self.adaptive_engine.ability_estimator.get_ability(
+                user_id=user_id,
+                subject=subject
+            )
+            
+            difficulty_level = await self.adaptive_engine.recommend_difficulty(
+                user_id=user_id,
+                subject=subject,
+                emotion_state=emotion_state,
+                recent_performance=None
+            )
+            difficulty_time_ms = (time.time() - difficulty_start) * 1000
+            
+            # Cognitive load from emotion analysis
+            cognitive_load = emotion_result.cognitive_load if hasattr(emotion_result, 'cognitive_load') else 0.5
+            
+            # ====================================================================
+            # PHASE 4 STEP 3: SELECT THINKING MODE
+            # ====================================================================
+            reasoning_chain = None
+            thinking_mode = None
+            budget = None
+            reasoning_time_ms = 0.0
+            
+            if enable_reasoning:
+                logger.info(f"🤔 Selecting thinking mode...")
+                thinking_start = time.time()
+                
+                # Select thinking mode (System 1 vs System 2)
+                thinking_decision = await self.metacognitive_controller.select_thinking_mode(
+                    query=message,
+                    emotion_state=emotion_state,
+                    cognitive_load=cognitive_load,
+                    learning_readiness=emotion_state.learning_readiness
+                )
+                
+                thinking_mode = thinking_decision.mode
+                logger.info(
+                    f"✅ Thinking mode selected: {thinking_mode.value} "
+                    f"(confidence: {thinking_decision.confidence:.2f})"
+                )
+                
+                # ====================================================================
+                # PHASE 4 STEP 4: ALLOCATE TOKEN BUDGET
+                # ====================================================================
+                logger.info(f"💰 Allocating token budget...")
+                
+                budget = await self.metacognitive_controller.allocate_budget(
+                    query=message,
+                    emotion_state=emotion_state,
+                    cognitive_load=cognitive_load,
+                    learning_readiness=emotion_state.learning_readiness
+                )
+                
+                logger.info(
+                    f"✅ Budget allocated: {budget.total_tokens} tokens "
+                    f"(reasoning: {budget.reasoning_tokens}, response: {budget.response_tokens})"
+                )
+                
+                # ====================================================================
+                # PHASE 4 STEP 5: GENERATE REASONING CHAIN (if System 2)
+                # ====================================================================
+                if thinking_mode in [ThinkingMode.SYSTEM2, ThinkingMode.HYBRID]:
+                    logger.info(f"🧠 Generating reasoning chain...")
+                    
+                    # Get AI provider for reasoning generation
+                    category = self.provider_manager.detect_category_from_message(message, emotion_state)
+                    selected_provider = await self.provider_manager.select_best_provider_for_category(
+                        category, emotion_state
+                    )
+                    provider_client = self.provider_manager.get_provider_client(selected_provider)
+                    
+                    reasoning_chain = await self.metacognitive_controller.generate_reasoning_chain(
+                        query=message,
+                        emotion_state=emotion_state,
+                        cognitive_load=cognitive_load,
+                        thinking_mode=thinking_mode,
+                        token_budget=budget,
+                        provider_client=provider_client
+                    )
+                    
+                    reasoning_time_ms = (time.time() - thinking_start) * 1000
+                    logger.info(
+                        f"✅ Reasoning chain generated: {len(reasoning_chain.steps)} steps "
+                        f"({reasoning_time_ms:.0f}ms)"
+                    )
+                else:
+                    logger.info(f"⚡ System 1 mode: Skipping explicit reasoning chain")
+                    reasoning_time_ms = (time.time() - thinking_start) * 1000
+            
+            # ====================================================================
+            # PHASE 4 STEP 6: ENHANCED AI RESPONSE
+            # ====================================================================
+            logger.info(f"🤖 Generating reasoning-enhanced response...")
+            ai_start = time.time()
+            
+            # Detect category and select provider
+            category = self.provider_manager.detect_category_from_message(message, emotion_state)
+            selected_provider = await self.provider_manager.select_best_provider_for_category(
+                category, emotion_state
+            )
+            
+            # RAG augmentation (if applicable)
+            rag_context = None
+            enable_rag = self._should_enable_rag(message, category)
+            
+            if enable_rag and self.rag_engine:
+                try:
+                    rag_context = await self.rag_engine.augment_query(
+                        query=message,
+                        emotion_state=emotion_state,
+                        ability_level=ability,
+                        enable_search=True
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️  RAG failed: {e}")
+            
+            # Enhanced prompt with reasoning context
+            enhanced_prompt = self._enhance_prompt_with_reasoning(
+                message=message,
+                emotion_result=emotion_result,
+                recent_messages=recent_messages,
+                relevant_messages=relevant_messages,
+                difficulty_level=difficulty_level,
+                ability=ability,
+                reasoning_chain=reasoning_chain,
+                rag_context=rag_context
+            )
+            
+            # Token limit (use response budget if reasoning enabled)
+            token_limit = budget.response_tokens if budget else self.calculate_token_limit(message, emotion_result)
+            
+            response = await self.provider_manager.generate(
+                prompt=enhanced_prompt,
+                provider_name=selected_provider,
+                max_tokens=token_limit
+            )
+            
+            ai_time_ms = (time.time() - ai_start) * 1000
+            logger.info(f"✅ AI response generated ({ai_time_ms:.0f}ms)")
+            
+            # ====================================================================
+            # PHASE 4 STEP 7: STORE MESSAGES & REASONING SESSION
+            # ====================================================================
+            logger.info(f"💾 Storing messages and reasoning session...")
+            storage_start = time.time()
+            
+            # Store user message
+            user_message = Message(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                user_id=user_id,
+                role=MessageRole.USER,
+                content=message,
+                timestamp=datetime.utcnow(),
+                emotion_state=emotion_state
+            )
+            
+            await self.context_manager.add_message(
+                session_id=session_id,
+                message=user_message,
+                generate_embedding=True
+            )
+            
+            # Store AI response message
+            ai_message = Message(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                user_id=user_id,
+                role=MessageRole.ASSISTANT,
+                content=response.content,
+                timestamp=datetime.utcnow(),
+                emotion_state=emotion_state,
+                provider_used=response.provider,
+                response_time_ms=response.response_time_ms,
+                tokens_used=response.tokens_used,
+                cost=response.cost
+            )
+            
+            await self.context_manager.add_message(
+                session_id=session_id,
+                message=ai_message,
+                generate_embedding=True
+            )
+            
+            # Store reasoning session (if generated)
+            if reasoning_chain and self.metacognitive_controller.db:
+                try:
+                    reasoning_doc = {
+                        'id': reasoning_chain.id,
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'query': message,
+                        'thinking_mode': thinking_mode.value if thinking_mode else 'system1',
+                        'steps': [
+                            {
+                                'step_number': step.step_number,
+                                'content': step.content,
+                                'strategy': step.strategy.value,
+                                'confidence': step.confidence,
+                                'timestamp': step.timestamp.isoformat()
+                            }
+                            for step in reasoning_chain.steps
+                        ],
+                        'conclusion': reasoning_chain.conclusion,
+                        'total_confidence': reasoning_chain.total_confidence,
+                        'processing_time_ms': reasoning_chain.processing_time_ms,
+                        'complexity_score': reasoning_chain.complexity_score,
+                        'token_budget_used': reasoning_chain.token_budget_used,
+                        'token_budget_allocated': reasoning_chain.token_budget_allocated,
+                        'emotion_state': {
+                            'primary_emotion': emotion_state.primary_emotion,
+                            'arousal': emotion_state.arousal,
+                            'valence': emotion_state.valence,
+                            'learning_readiness': emotion_state.learning_readiness.value
+                        },
+                        'timestamp': datetime.utcnow()
+                    }
+                    
+                    await self.metacognitive_controller.db.reasoning_sessions.insert_one(reasoning_doc)
+                    logger.info(f"✅ Reasoning session stored: {reasoning_chain.id}")
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to store reasoning session: {e}")
+            
+            storage_time_ms = (time.time() - storage_start) * 1000
+            logger.info(f"✅ Storage complete ({storage_time_ms:.0f}ms)")
+            
+            # Update ability estimate
+            interaction_success = self._infer_success_from_emotion(emotion_state)
+            await self.adaptive_engine.ability_estimator.update_ability(
+                user_id=user_id,
+                subject=subject,
+                item_difficulty=difficulty_level.value,
+                result=interaction_success
+            )
+            
+            # ====================================================================
+            # PHASE 4 STEP 8: FINALIZE RESPONSE WITH REASONING
+            # ====================================================================
+            response.emotion_state = emotion_state
+            response.response_time_ms = (time.time() - start_time) * 1000
+            
+            # Track costs
+            if response.tokens_used > 0:
+                cost = await cost_tracker.track_request(
+                    provider=response.provider,
+                    model=response.model_name,
+                    input_tokens=len(message.split()) * 2,
+                    output_tokens=response.tokens_used,
+                    user_id=user_id,
+                    category=category
+                )
+                response.cost = cost
+            
+            # Add metadata
+            response.category = category
+            response.context_info = ContextInfo(
+                recent_messages_count=len(recent_messages),
+                relevant_messages_count=len(relevant_messages),
+                has_context=len(recent_messages) > 0 or len(relevant_messages) > 0,
+                retrieval_time_ms=context_time_ms
+            )
+            
+            response.ability_info = AbilityInfo(
+                ability_level=ability,
+                recommended_difficulty=difficulty_level.value,
+                cognitive_load=cognitive_load,
+                flow_state_score=None
+            )
+            
+            response.ability_updated = True
+            
+            # Phase 4: Add reasoning metadata
+            response.reasoning_enabled = enable_reasoning
+            if reasoning_chain:
+                response.reasoning_chain = reasoning_chain.to_dict_for_frontend()
+                response.thinking_mode = thinking_mode.value if thinking_mode else None
+            else:
+                response.reasoning_chain = None
+                response.thinking_mode = 'system1' if enable_reasoning else None
+            
+            # Processing breakdown
+            response.processing_breakdown = {
+                "context_retrieval_ms": context_time_ms,
+                "emotion_detection_ms": emotion_time_ms,
+                "difficulty_calculation_ms": difficulty_time_ms,
+                "reasoning_generation_ms": reasoning_time_ms,
+                "ai_generation_ms": ai_time_ms,
+                "storage_ms": storage_time_ms,
+                "total_ms": response.response_time_ms
+            }
+            
+            # RAG metadata
+            if rag_context:
+                response.rag_enabled = True
+                response.citations = rag_context.citations
+                response.sources_count = len(rag_context.sources)
+                response.search_provider = rag_context.provider_used.value
+            else:
+                response.rag_enabled = False
+                response.citations = None
+                response.sources_count = 0
+                response.search_provider = None
+            
+            # Generate follow-up questions
+            try:
+                if self.ml_question_generator:
+                    response.suggested_questions = await self.ml_question_generator.generate_follow_ups(
+                        user_message=message,
+                        ai_response=response.content,
+                        emotion_state=emotion_state,
+                        ability_level=ability,
+                        category=category,
+                        recent_messages=recent_messages,
+                        max_questions=5
+                    )
+                else:
+                    response.suggested_questions = []
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to generate follow-up questions: {e}")
+                response.suggested_questions = []
+            
+            total_time_ms = response.response_time_ms
+            logger.info(
+                f"✅ Deep Thinking request processed in {total_time_ms:.0f}ms "
+                f"(reasoning: {reasoning_time_ms:.0f}ms, "
+                f"AI: {ai_time_ms:.0f}ms) | "
+                f"Mode: {thinking_mode.value if thinking_mode else 'system1'}"
+            )
+            
+            return response
+        
+        except Exception as e:
+            logger.error(f"❌ Error in Deep Thinking processing: {e}", exc_info=True)
+            raise MasterXError(
+                f"Failed to process request with reasoning: {str(e)}",
+                details={
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'error': str(e)
+                }
+            )
+    
     async def _process_basic(
         self,
         user_id: str,
@@ -716,6 +1178,91 @@ CURRENT STUDENT MESSAGE:
 Remember: This is a CONTINUING conversation. Build on what came before."""
         
         return enhanced_prompt
+
+    def _enhance_prompt_with_reasoning(
+        self,
+        message: str,
+        emotion_result,
+        recent_messages: List[Message],
+        relevant_messages: List[Message],
+        difficulty_level,
+        ability: float,
+        reasoning_chain: Optional[ReasoningChain] = None,
+        rag_context = None
+    ) -> str:
+        """
+        Phase 4: Prompt enhancement with reasoning chain
+        
+        Extends Phase 3 prompt with visible reasoning steps to help AI:
+        1. Understand the thinking process
+        2. Build upon reasoning steps
+        3. Provide coherent conclusion
+        
+        Args:
+            message: Current user message
+            emotion_result: Emotion analysis result
+            recent_messages: Recent conversation history
+            relevant_messages: Semantically relevant past messages
+            difficulty_level: Recommended difficulty level
+            ability: Current ability estimate
+            reasoning_chain: Generated reasoning chain (optional)
+            rag_context: RAG context with web sources (optional)
+        
+        Returns:
+            Enhanced prompt with reasoning context
+        """
+        
+        # Start with Phase 3 base prompt
+        base_prompt = self._enhance_prompt_phase3(
+            message=message,
+            emotion_result=emotion_result,
+            recent_messages=recent_messages,
+            relevant_messages=relevant_messages,
+            difficulty_level=difficulty_level,
+            ability=ability,
+            rag_context=rag_context
+        )
+        
+        # If no reasoning chain, return base prompt
+        if not reasoning_chain or not reasoning_chain.steps:
+            return base_prompt
+        
+        # Add reasoning chain context
+        reasoning_text = f"""
+
+🧠 REASONING PROCESS (Your step-by-step thinking):
+{"=" * 60}
+This is how you approached this problem. Use these steps to inform your final response.
+
+"""
+        
+        for step in reasoning_chain.steps:
+            reasoning_text += f"""
+Step {step.step_number} [{step.strategy.value.upper()}] (confidence: {step.confidence:.0%}):
+{step.content}
+
+"""
+        
+        reasoning_text += f"""{"=" * 60}
+
+📋 REASONING INTEGRATION INSTRUCTIONS:
+1. Review the reasoning steps above - they represent your thinking process
+2. Synthesize these steps into a coherent, student-friendly explanation
+3. Don't repeat the steps verbatim, but use them to structure your response
+4. Maintain the logical flow from the reasoning chain
+5. Ensure your conclusion aligns with the reasoning process
+6. If a reasoning step has low confidence, acknowledge uncertainty appropriately
+
+"""
+        
+        # Insert reasoning before the final response requirements
+        enhanced_with_reasoning = base_prompt.replace(
+            "📝 RESPONSE REQUIREMENTS:",
+            reasoning_text + "📝 RESPONSE REQUIREMENTS:"
+        )
+        
+        return enhanced_with_reasoning
+
     
     
     def _should_enable_rag(self, message: str, category: str) -> bool:

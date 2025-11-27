@@ -124,7 +124,10 @@ class MasterXEngine:
                 )
                 
                 # Phase 4: Initialize Deep Thinking components
-                self.metacognitive_controller = MetacognitiveController(db=db)
+                self.metacognitive_controller = MetacognitiveController(
+                    db=db, 
+                    provider_manager=self.provider_manager
+                )
                 
                 # Ensure collections exist
                 await db.create_collection("question_interactions", check_exists=False)

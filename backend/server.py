@@ -21,7 +21,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import uuid
 
-from core.models import ChatRequest, ChatResponse, EmotionState, ContextInfo, AbilityInfo
+from core.models import (
+    ChatRequest, 
+    ChatResponse, 
+    EmotionState, 
+    ContextInfo, 
+    AbilityInfo,
+    ReasoningRequest,
+    ReasoningResponse
+)
 from pydantic import BaseModel, field_validator, model_validator
 from core.engine import MasterXEngine
 
@@ -1503,6 +1511,363 @@ async def record_question_interaction(request: QuestionInteractionRequest):
         logger.error(f"❌ Error recording question interaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================================
+# DEEP THINKING / REASONING ENDPOINTS (Phase 1)
+# ============================================================================
+
+@app.post("/api/v1/chat/reasoning", response_model=ReasoningResponse)
+async def chat_with_reasoning(request: ReasoningRequest):
+    """
+    Chat endpoint with visible reasoning (Deep Thinking Phase 1)
+    
+    Provides step-by-step thinking process using:
+    - Dual Process Engine (System 1/2 mode selection)
+    - MCTS Reasoning (simplified chain generation)
+    - Dynamic Budget Allocation (token management)
+    - Metacognitive Control (high-level orchestration)
+    
+    Returns:
+        ReasoningResponse with reasoning chain, thinking mode, and standard chat metadata
+    """
+    
+    logger.info(f"🧠 Reasoning chat request from user: {request.user_id} (reasoning_enabled={request.enable_reasoning})")
+    
+    try:
+        # Get or create session
+        sessions_collection = get_sessions_collection()
+        messages_collection = get_messages_collection()
+        
+        if request.session_id:
+            session_id = request.session_id
+            # Load existing session
+            session = await sessions_collection.find_one({"_id": session_id})
+            if not session:
+                # Create session if not found
+                await sessions_collection.insert_one({
+                    "_id": session_id,
+                    "user_id": request.user_id,
+                    "started_at": datetime.utcnow(),
+                    "status": "active",
+                    "total_messages": 0,
+                    "total_tokens": 0,
+                    "total_cost": 0.0,
+                    "emotion_trajectory": []
+                })
+                logger.info(f"✅ Created new session: {session_id}")
+        else:
+            # Create new session
+            session_id = str(uuid.uuid4())
+            await sessions_collection.insert_one({
+                "_id": session_id,
+                "user_id": request.user_id,
+                "started_at": datetime.utcnow(),
+                "status": "active",
+                "total_messages": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0,
+                "emotion_trajectory": []
+            })
+            logger.info(f"✅ Created new session: {session_id}")
+        
+        # Save user message
+        user_message_id = str(uuid.uuid4())
+        await messages_collection.insert_one({
+            "_id": user_message_id,
+            "session_id": session_id,
+            "user_id": request.user_id,
+            "role": "user",
+            "content": request.message,
+            "timestamp": datetime.utcnow()
+        })
+        
+        # Process with reasoning enabled
+        response_data = await app.state.engine.process_request_with_reasoning(
+            user_id=request.user_id,
+            message=request.message,
+            session_id=session_id,
+            enable_reasoning=request.enable_reasoning,
+            thinking_mode=request.thinking_mode,
+            max_reasoning_depth=request.max_reasoning_depth,
+            context=request.context
+        )
+        
+        # Save AI message with reasoning metadata
+        ai_message_id = str(uuid.uuid4())
+        await messages_collection.insert_one({
+            "_id": ai_message_id,
+            "session_id": session_id,
+            "user_id": request.user_id,
+            "role": "assistant",
+            "content": response_data.get("message", ""),
+            "timestamp": datetime.utcnow(),
+            "emotion_state": response_data.get("emotion_state"),
+            "provider_used": response_data.get("provider_used", "unknown"),
+            "response_time_ms": response_data.get("response_time_ms", 0),
+            "tokens_used": response_data.get("tokens_used", 0),
+            "cost": response_data.get("cost", 0.0),
+            # Reasoning metadata
+            "reasoning_enabled": response_data.get("reasoning_enabled", False),
+            "reasoning_chain": response_data.get("reasoning_chain"),
+            "thinking_mode": response_data.get("thinking_mode")
+        })
+        
+        # Update session
+        await sessions_collection.update_one(
+            {"_id": session_id},
+            {
+                "$inc": {
+                    "total_messages": 2,  # User + AI message
+                    "total_tokens": response_data.get("tokens_used", 0),
+                    "total_cost": response_data.get("cost", 0.0)
+                },
+                "$push": {
+                    "emotion_trajectory": response_data.get("emotion_state", {}).get("primary_emotion", "neutral") if response_data.get("emotion_state") else "neutral"
+                }
+            }
+        )
+        
+        # Build ReasoningResponse from response_data
+        response = ReasoningResponse(
+            session_id=session_id,
+            message=response_data.get("message", ""),
+            reasoning_enabled=response_data.get("reasoning_enabled", False),
+            reasoning_chain=response_data.get("reasoning_chain"),
+            thinking_mode=response_data.get("thinking_mode"),
+            emotion_state=EmotionState(**response_data["emotion_state"]) if response_data.get("emotion_state") else None,
+            provider_used=response_data.get("provider_used", "unknown"),
+            response_time_ms=response_data.get("response_time_ms", 0),
+            timestamp=datetime.utcnow(),
+            tokens_used=response_data.get("tokens_used"),
+            cost=response_data.get("cost"),
+            category_detected=response_data.get("category_detected"),
+            context_retrieved=response_data.get("context_retrieved"),
+            ability_info=response_data.get("ability_info"),
+            cached=response_data.get("cached", False),
+            processing_breakdown=response_data.get("processing_breakdown"),
+            rag_enabled=response_data.get("rag_enabled", False),
+            citations=response_data.get("citations"),
+            sources_count=response_data.get("sources_count"),
+            search_provider=response_data.get("search_provider"),
+            suggested_questions=response_data.get("suggested_questions")
+        )
+        
+        logger.info(
+            f"✅ Reasoning chat response generated successfully "
+            f"(session: {session_id}, reasoning_enabled: {response.reasoning_enabled}, "
+            f"thinking_mode: {response.thinking_mode})"
+        )
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Error in reasoning chat endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/reasoning/session/{session_id}")
+async def get_reasoning_session(session_id: str):
+    """
+    Get reasoning session details with full reasoning chain history
+    
+    Returns all reasoning chains from a session, useful for:
+    - Reviewing thinking process over time
+    - Debugging reasoning quality
+    - Understanding mode selection patterns
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Dict with session metadata and reasoning chains
+    """
+    try:
+        db = await app.state.engine._get_database()
+        
+        # Get reasoning sessions for this session_id
+        reasoning_sessions = await db.reasoning_sessions.find(
+            {"session_id": session_id}
+        ).sort("created_at", -1).to_list(length=100)
+        
+        if not reasoning_sessions:
+            # Check if regular session exists
+            sessions_collection = get_sessions_collection()
+            session = await sessions_collection.find_one({"_id": session_id})
+            
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+            
+            # Session exists but no reasoning data yet
+            return {
+                "session_id": session_id,
+                "reasoning_sessions": [],
+                "total_reasoning_sessions": 0,
+                "message": "Session exists but no reasoning data available"
+            }
+        
+        return {
+            "session_id": session_id,
+            "reasoning_sessions": reasoning_sessions,
+            "total_reasoning_sessions": len(reasoning_sessions),
+            "session_metadata": {
+                "first_reasoning": reasoning_sessions[-1]["created_at"] if reasoning_sessions else None,
+                "last_reasoning": reasoning_sessions[0]["created_at"] if reasoning_sessions else None,
+                "thinking_modes_used": list(set(r.get("thinking_mode") for r in reasoning_sessions if r.get("thinking_mode")))
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting reasoning session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/reasoning/analytics/{user_id}")
+async def get_reasoning_analytics(user_id: str):
+    """
+    Get reasoning analytics for a user (Deep Thinking Phase 1)
+    
+    Provides insights into:
+    - Thinking mode distribution (System 1 vs System 2 vs Hybrid)
+    - Average complexity and confidence by mode
+    - Processing time patterns
+    - Reasoning session trends
+    
+    Useful for:
+    - Understanding user learning patterns
+    - Optimizing thinking mode selection
+    - Monitoring reasoning quality over time
+    
+    Args:
+        user_id: User identifier
+        
+    Returns:
+        Dict with aggregated reasoning analytics
+    """
+    try:
+        db = await app.state.engine._get_database()
+        
+        # Aggregate reasoning patterns by thinking mode
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {
+                "_id": "$thinking_mode",
+                "count": {"$sum": 1},
+                "avg_complexity": {"$avg": "$complexity_score"},
+                "avg_confidence": {"$avg": "$total_confidence"},
+                "avg_time_ms": {"$avg": "$processing_time_ms"},
+                "avg_steps": {"$avg": {"$size": {"$ifNull": ["$steps", []]}}}
+            }},
+            {"$sort": {"count": -1}}
+        ]
+        
+        mode_analytics = await db.reasoning_sessions.aggregate(pipeline).to_list(length=100)
+        
+        # Get total count for this user
+        total_sessions = await db.reasoning_sessions.count_documents({"user_id": user_id})
+        
+        # Calculate overall stats
+        overall_pipeline = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {
+                "_id": None,
+                "total_sessions": {"$sum": 1},
+                "avg_complexity": {"$avg": "$complexity_score"},
+                "avg_confidence": {"$avg": "$total_confidence"},
+                "avg_time_ms": {"$avg": "$processing_time_ms"},
+                "total_steps": {"$sum": {"$size": {"$ifNull": ["$steps", []]}}}
+            }}
+        ]
+        
+        overall_stats = await db.reasoning_sessions.aggregate(overall_pipeline).to_list(length=1)
+        overall = overall_stats[0] if overall_stats else {}
+        
+        # Get recent sessions (last 10)
+        recent_sessions = await db.reasoning_sessions.find(
+            {"user_id": user_id}
+        ).sort("created_at", -1).limit(10).to_list(length=10)
+        
+        return {
+            "user_id": user_id,
+            "total_reasoning_sessions": total_sessions,
+            "thinking_mode_distribution": mode_analytics,
+            "overall_stats": {
+                "avg_complexity": overall.get("avg_complexity", 0),
+                "avg_confidence": overall.get("avg_confidence", 0),
+                "avg_time_ms": overall.get("avg_time_ms", 0),
+                "total_reasoning_steps": overall.get("total_steps", 0),
+                "avg_steps_per_session": overall.get("total_steps", 0) / total_sessions if total_sessions > 0 else 0
+            },
+            "recent_sessions": [
+                {
+                    "session_id": s.get("session_id"),
+                    "thinking_mode": s.get("thinking_mode"),
+                    "complexity_score": s.get("complexity_score"),
+                    "total_confidence": s.get("total_confidence"),
+                    "step_count": len(s.get("steps", [])),
+                    "created_at": s.get("created_at")
+                }
+                for s in recent_sessions
+            ],
+            "recommendations": _generate_reasoning_recommendations(mode_analytics, overall)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting reasoning analytics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _generate_reasoning_recommendations(mode_analytics: list, overall_stats: dict) -> list:
+    """
+    Generate personalized recommendations based on reasoning patterns
+    
+    Pure AI/ML approach - no hardcoded rules, uses statistical patterns
+    """
+    recommendations = []
+    
+    if not mode_analytics:
+        return ["Start using reasoning mode to get personalized insights"]
+    
+    # Find dominant mode
+    dominant_mode = max(mode_analytics, key=lambda x: x["count"])
+    dominant_mode_name = dominant_mode["_id"]
+    dominant_percentage = (dominant_mode["count"] / sum(m["count"] for m in mode_analytics)) * 100
+    
+    # Recommendation based on mode diversity
+    if dominant_percentage > 80:
+        if dominant_mode_name == "system1":
+            recommendations.append(
+                "You primarily use fast thinking. Try enabling deeper reasoning (System 2) "
+                "for complex problems to improve understanding."
+            )
+        elif dominant_mode_name == "system2":
+            recommendations.append(
+                "You use deep thinking frequently. Consider hybrid mode for better "
+                "balance between speed and thoroughness."
+            )
+    
+    # Confidence-based recommendations
+    avg_confidence = overall_stats.get("avg_confidence", 0)
+    if avg_confidence < 0.6:
+        recommendations.append(
+            f"Your average reasoning confidence is {avg_confidence:.1%}. "
+            "Try breaking down complex problems into smaller steps."
+        )
+    elif avg_confidence > 0.85:
+        recommendations.append(
+            f"Excellent reasoning confidence ({avg_confidence:.1%})! "
+            "You're effectively using the thinking system."
+        )
+    
+    # Complexity-based recommendations
+    avg_complexity = overall_stats.get("avg_complexity", 0)
+    if avg_complexity > 0.7:
+        recommendations.append(
+            "You tackle complex problems frequently. The system is adapting well to your needs."
+        )
+    
+    return recommendations if recommendations else ["Keep using reasoning mode to unlock insights"]
 
 
 # Cost dashboard endpoint (admin)

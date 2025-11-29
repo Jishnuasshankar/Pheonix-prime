@@ -537,8 +537,10 @@ class MasterXEngine:
         session_id: str,
         context: Optional[dict] = None,
         subject: str = "general",
-        enable_reasoning: bool = True
-    ) -> AIResponse:
+        enable_reasoning: bool = True,
+        thinking_mode: Optional[str] = None,
+        max_reasoning_depth: Optional[int] = None
+    ) -> dict:
         """
         PHASE 4: Process request with Deep Thinking reasoning
         
@@ -956,7 +958,30 @@ class MasterXEngine:
                 f"Mode: {thinking_mode.value if thinking_mode else 'system1'}"
             )
             
-            return response
+            # Convert AIResponse to dict for server.py compatibility
+            return {
+                "message": response.content,
+                "provider_used": response.provider,
+                "model_name": response.model_name,
+                "tokens_used": response.tokens_used,
+                "cost": response.cost,
+                "response_time_ms": response.response_time_ms,
+                "emotion_state": response.emotion_state.model_dump() if response.emotion_state else None,
+                "category_detected": response.category,
+                "context_retrieved": response.context_info.model_dump() if response.context_info else None,
+                "ability_info": response.ability_info.model_dump() if response.ability_info else None,
+                "ability_updated": response.ability_updated,
+                "processing_breakdown": response.processing_breakdown,
+                "rag_enabled": response.rag_enabled,
+                "citations": response.citations,
+                "sources_count": response.sources_count,
+                "search_provider": response.search_provider,
+                "suggested_questions": [q.model_dump() for q in response.suggested_questions] if response.suggested_questions else [],
+                "reasoning_enabled": response.reasoning_enabled if hasattr(response, 'reasoning_enabled') else enable_reasoning,
+                "reasoning_chain": response.reasoning_chain if hasattr(response, 'reasoning_chain') else None,
+                "thinking_mode": response.thinking_mode if hasattr(response, 'thinking_mode') else (thinking_mode.value if thinking_mode else 'system1'),
+                "cached": False
+            }
         
         except Exception as e:
             logger.error(f"❌ Error in Deep Thinking processing: {e}", exc_info=True)

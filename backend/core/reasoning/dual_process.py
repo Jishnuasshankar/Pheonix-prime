@@ -279,8 +279,18 @@ class DualProcessEngine:
         Returns:
             Load factor (0.0=high load, 1.0=low load)
         """
+        # Handle type conversion for safety
+        try:
+            load_value = float(load) if load is not None else 0.5
+        except (TypeError, ValueError):
+            logger.warning(f"⚠️ Invalid cognitive_load value: {load}, using default 0.5")
+            load_value = 0.5
+        
+        # Clamp to valid range
+        load_value = max(0.0, min(1.0, load_value))
+        
         # Inverse: high load means we need slower, more careful thinking
-        return 1.0 - load
+        return 1.0 - load_value
     
     def _analyze_readiness(self, readiness: LearningReadiness) -> float:
         """

@@ -76,6 +76,7 @@ class ReasoningPath(BaseModel):
     steps: List[ReasoningStep] = Field(default_factory=list)
     total_value: float = Field(default=0.0)
     confidence: float = Field(default=0.7)
+    conclusion: str = Field(default="")
     
     def add_step(self, step: ReasoningStep):
         """Add step to path"""
@@ -357,6 +358,12 @@ class MCTSReasoningEngine:
         # Calculate path metrics
         path.total_value = current.value / current.visits if current.visits > 0 else 0.0
         path.confidence = path.total_value
+        
+        # Set conclusion as the last step's content
+        if path.steps:
+            path.conclusion = path.steps[-1].content
+        else:
+            path.conclusion = "No reasoning steps generated"
         
         return path
     

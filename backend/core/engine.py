@@ -818,7 +818,7 @@ class MasterXEngine:
             )
             
             # Store reasoning session (if generated)
-            if reasoning_chain and self.metacognitive_controller.db:
+            if reasoning_chain is not None and self.metacognitive_controller.db is not None:
                 try:
                     reasoning_doc = {
                         'id': reasoning_chain.id,

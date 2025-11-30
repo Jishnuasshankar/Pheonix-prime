@@ -703,7 +703,6 @@ class MasterXEngine:
                     selected_provider = await self.provider_manager.select_best_provider_for_category(
                         category, emotion_state
                     )
-                    provider_client = self.provider_manager.get_provider_client(selected_provider)
                     
                     reasoning_chain = await self.metacognitive_controller.generate_reasoning_chain(
                         query=message,
@@ -711,7 +710,7 @@ class MasterXEngine:
                         cognitive_load=cognitive_load,
                         thinking_mode=thinking_mode,
                         token_budget=budget,
-                        provider_client=provider_client
+                        provider_name=selected_provider
                     )
                     
                     reasoning_time_ms = (time.time() - thinking_start) * 1000

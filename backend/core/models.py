@@ -386,6 +386,11 @@ class AIResponse(BaseModel):
     
     # Follow-up questions (Perplexity-inspired)
     suggested_questions: Optional[List[SuggestedQuestion]] = None
+    
+    # Deep Thinking / Reasoning metadata (Phase 4)
+    reasoning_enabled: bool = False
+    reasoning_chain: Optional[Dict[str, Any]] = None
+    thinking_mode: Optional[str] = None
 
 
 # ============================================================================
@@ -431,6 +436,11 @@ class ChatResponse(BaseModel):
     
     # Follow-up questions (Perplexity-inspired)
     suggested_questions: Optional[List[SuggestedQuestion]] = None
+    
+    # Deep Thinking / Reasoning metadata (Phase 4)
+    reasoning_enabled: bool = False
+    reasoning_chain: Optional[Dict[str, Any]] = None
+    thinking_mode: Optional[str] = None
 
 
 class ReasoningRequest(BaseModel):

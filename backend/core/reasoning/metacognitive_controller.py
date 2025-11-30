@@ -155,7 +155,8 @@ class MetacognitiveController:
             thinking_mode=thinking_mode.value,
             emotion_state={
                 'primary_emotion': emotion_state.primary_emotion,
-                'confidence': emotion_state.confidence,
+                'arousal': emotion_state.arousal,
+                'valence': emotion_state.valence,
                 'learning_readiness': emotion_state.learning_readiness.value
             },
             complexity_score=token_budget.complexity_score,

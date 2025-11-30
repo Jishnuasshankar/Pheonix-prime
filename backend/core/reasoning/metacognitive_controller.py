@@ -131,7 +131,7 @@ class MetacognitiveController:
         cognitive_load: float,
         thinking_mode: ThinkingMode,
         token_budget: TokenBudget,
-        provider_client: Any
+        provider_name: str = "groq"
     ) -> ReasoningChain:
         """
         Generate reasoning chain using MCTS
@@ -142,7 +142,7 @@ class MetacognitiveController:
             cognitive_load: Cognitive load level (0-1)
             thinking_mode: Selected thinking mode
             token_budget: Allocated token budget
-            provider_client: AI provider client for generating steps
+            provider_name: AI provider name for generating steps
             
         Returns:
             ReasoningChain with all reasoning steps
@@ -165,30 +165,30 @@ class MetacognitiveController:
         try:
             # Generate reasoning steps via MCTS (if available)
             if self.mcts_engine:
-                reasoning_path = await self.mcts_engine.search(
+                reasoning_path = await self.mcts_engine.generate_reasoning_chain(
                     query=query,
-                    max_depth=self._calculate_reasoning_depth(thinking_mode, token_budget),
-                    max_iterations=self._calculate_mcts_iterations(thinking_mode),
-                    provider_client=provider_client
+                    emotion_state=emotion_state,
+                    max_steps=self._calculate_reasoning_depth(thinking_mode, token_budget),
+                    token_budget=token_budget.reasoning_tokens
                 )
             else:
                 # Fallback: Create simple reasoning path without MCTS
                 from .mcts_engine import ReasoningPath
-                reasoning_path = ReasoningPath(
-                    steps=[query],
-                    total_value=0.5,
+                simple_step = ReasoningStep(
+                    step_number=1,
+                    content=f"Analyzing: {query[:100]}...",
+                    strategy=ReasoningStrategy.DEDUCTIVE,
                     confidence=0.7
                 )
-            
-            # Convert MCTS path to reasoning steps
-            for i, node_content in enumerate(reasoning_path.steps, 1):
-                step = ReasoningStep(
-                    step_number=i,
-                    content=node_content,
-                    strategy=self._infer_strategy(node_content, i),
-                    confidence=reasoning_path.confidence,
-                    processing_time_ms=(time.time() - start_time) * 1000
+                reasoning_path = ReasoningPath(
+                    steps=[simple_step],
+                    total_value=0.5,
+                    confidence=0.7,
+                    conclusion=f"Analysis of: {query[:50]}..."
                 )
+            
+            # Add MCTS reasoning steps to chain
+            for step in reasoning_path.steps:
                 chain.add_step(step)
             
             # Mark chain as complete

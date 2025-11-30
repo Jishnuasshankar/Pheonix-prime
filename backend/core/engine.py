@@ -641,8 +641,13 @@ class MasterXEngine:
             )
             difficulty_time_ms = (time.time() - difficulty_start) * 1000
             
-            # Cognitive load from emotion analysis
-            cognitive_load = emotion_result.cognitive_load if hasattr(emotion_result, 'cognitive_load') else 0.5
+            # Cognitive load from emotion analysis (ensure float type)
+            try:
+                cognitive_load = float(emotion_result.cognitive_load) if hasattr(emotion_result, 'cognitive_load') and emotion_result.cognitive_load is not None else 0.5
+                cognitive_load = max(0.0, min(1.0, cognitive_load))  # Clamp to [0, 1]
+            except (TypeError, ValueError):
+                logger.warning(f"⚠️ Invalid cognitive_load from emotion analysis, using default 0.5")
+                cognitive_load = 0.5
             
             # ====================================================================
             # PHASE 4 STEP 3: SELECT THINKING MODE

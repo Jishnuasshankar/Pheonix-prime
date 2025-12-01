@@ -57,15 +57,15 @@ class MasterXEngine:
     
     # Response size categories (model-independent)
     RESPONSE_SIZES = {
-        'minimal': 400,          # Very quick answers
-        'concise': 800,          # Short answers
-        'standard': 1500,        # Normal responses
-        'detailed': 2500,        # Explanations with examples
-        'comprehensive': 3500,   # Complex topics, multiple examples
-        'extensive': 4500        # Maximum detail for struggling students
+        'minimal': 500,          # Very quick answers
+        'concise': 1000,          # Short answers
+        'standard': 2500,        # Normal responses
+        'detailed': 3500,        # Explanations with examples
+        'comprehensive': 5000,   # Complex topics, multiple examples
+        'extensive': 8192        # Maximum detail for struggling students
     }
     
-    def __init__(self, model_max_tokens: int = 4096):
+    def __init__(self, model_max_tokens: int = 8192):
         """
         Initialize MasterX engine with all intelligence components
         
@@ -1131,7 +1131,6 @@ Provide a helpful, clear, and supportive response."""
 🔗 CONTINUITY REQUIREMENT (CRITICAL):
 You MUST explicitly acknowledge and build upon the conversation above.
 - Start your response by REFERENCING something specific from the conversation
-- Use phrases like "Building on what we discussed...", "Following up on...", "As we covered earlier..."
 - Show that you REMEMBER and are CONTINUING the conversation, not starting fresh
 - If the student asks for clarification, reference the SPECIFIC thing you explained before
 - Create a SEAMLESS flow from previous messages to your current response
@@ -1198,7 +1197,6 @@ CURRENT STUDENT MESSAGE:
 "{message}"
 
 📝 RESPONSE REQUIREMENTS:
-✅ EXPLICITLY reference the conversation history above (use "Building on...", "As we discussed...")
 ✅ Show continuity - you're continuing a conversation, not answering in isolation
 ✅ Match the student's current emotional state (see guidance above)
 ✅ Calibrate difficulty to their ability level ({difficulty_level.label})

@@ -2,8 +2,8 @@
 Reasoning Chain Data Structures
 Represents step-by-step thinking process
 
-AGENTS.md compliant:
-- Pydantic V2 models
+AGENTS.MD compliant:
+- Pydantic V2 models with ConfigDict
 - Type hints
 - Zero hardcoded values
 - Clean naming
@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ReasoningStrategy(str, Enum):
@@ -47,8 +47,8 @@ class ReasoningStep(BaseModel):
     ucb_score: Optional[float] = None
     visit_count: Optional[int] = None
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "step_number": 1,
                 "content": "First, I need to understand what the equation is asking...",
@@ -56,6 +56,7 @@ class ReasoningStep(BaseModel):
                 "confidence": 0.85
             }
         }
+    )
 
 
 class ReasoningChain(BaseModel):
@@ -143,9 +144,9 @@ class ReasoningChain(BaseModel):
             'strategy_distribution': self.get_strategy_distribution()
         }
     
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "query": "Explain how photosynthesis works",
                 "thinking_mode": "system2",
@@ -160,3 +161,4 @@ class ReasoningChain(BaseModel):
                 "complexity_score": 0.6
             }
         }
+    )

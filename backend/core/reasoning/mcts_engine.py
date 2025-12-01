@@ -220,6 +220,10 @@ class MCTSReasoningEngine:
         """
         Expansion phase: generate next reasoning step using AI
         
+        Uses dynamic provider selection for optimal quality/speed tradeoff.
+        MCTS requires fast reasoning steps, so we prefer speed but maintain
+        quality threshold for accurate reasoning.
+        
         Args:
             node: Node to expand
             query: Original query
@@ -236,10 +240,32 @@ class MCTSReasoningEngine:
             # Prompt AI to generate next reasoning step
             prompt = self._create_expansion_prompt(query, path_context, emotion_state)
             
-            # Generate step using AI provider
+            # Dynamically select best provider for reasoning
+            # MCTS benefits from fast providers but needs good quality
+            # Use "reasoning" category to get best model for logical thinking
+            try:
+                best_provider, best_model = await self.provider_manager.select_best_model(
+                    category="reasoning",
+                    prefer_speed=True,  # MCTS needs fast iterations
+                    min_quality_score=60.0  # Maintain quality threshold
+                )
+                logger.debug(
+                    f"🤖 MCTS using dynamically selected provider: "
+                    f"{best_provider}/{best_model}"
+                )
+            except Exception as provider_error:
+                logger.warning(
+                    f"Provider selection failed: {provider_error}, "
+                    f"falling back to any available provider"
+                )
+                best_provider = None  # Will trigger auto-selection in generate()
+            
+            # Generate step using AI provider (with dynamic selection)
+            # If best_provider is None, generate() will auto-select best model
             response = await self.provider_manager.generate(
                 prompt=prompt,
-                provider_name="groq",  # Use fast provider for MCTS
+                category="reasoning",
+                provider_name=best_provider,  # None = auto-select
                 max_tokens=200  # Short reasoning steps
             )
             
@@ -259,10 +285,15 @@ class MCTSReasoningEngine:
                 depth=node.depth + 1
             )
             
+            logger.debug(
+                f"✅ MCTS expanded node at depth {node.depth} → {new_node.depth}, "
+                f"strategy={strategy.value}"
+            )
+            
             return new_node
         
         except Exception as e:
-            logger.warning(f"Failed to expand node: {e}")
+            logger.error(f"❌ Failed to expand MCTS node: {e}", exc_info=True)
             return None
     
     def _simulate(self, node: MCTSNode) -> float:

@@ -84,7 +84,7 @@ class BudgetConfig(BaseModel):
     reasoning_ratio_max: float = Field(default=0.7, ge=0.5, le=0.8)
     
     # Provider limits
-    provider_max_tokens: int = Field(default=4096, ge=2048, le=8192)
+    provider_max_tokens: int = Field(default=8192, ge=2048, le=16384)
     
     # Safety margins
     safety_margin: float = Field(
@@ -129,22 +129,30 @@ class DynamicBudgetAllocator:
             logger.error(f"Failed to initialize DynamicBudgetAllocator: {e}")
             raise
     
-    async def allocate_budget(
+    def allocate_budget(
         self,
-        query: str,
         emotion_state: EmotionState,
         cognitive_load: float,
-        learning_readiness: LearningReadiness,
+        complexity: Optional[float] = None,
+        mode: Optional[BudgetMode] = None,
+        query: Optional[str] = None,
+        learning_readiness: Optional[LearningReadiness] = None,
         provider_max_tokens: Optional[int] = None
     ) -> TokenBudget:
         """
         Allocate dynamic token budget
         
+        Supports two calling patterns:
+        1. Testing/Direct: allocate_budget(emotion_state, cognitive_load, complexity, mode)
+        2. Production: allocate_budget(emotion_state, cognitive_load, query=query, learning_readiness=readiness)
+        
         Args:
-            query: User query text
             emotion_state: Current emotional state
             cognitive_load: Cognitive load (0-1 scale)
-            learning_readiness: Learning readiness level
+            complexity: Query complexity (0-1 scale, optional - calculated from query if not provided)
+            mode: Budget mode (optional - determined automatically if not provided)
+            query: User query text (optional - used to calculate complexity)
+            learning_readiness: Learning readiness level (optional - derived from emotion if not provided)
             provider_max_tokens: Provider's max token limit (optional)
         
         Returns:
@@ -155,10 +163,7 @@ class DynamicBudgetAllocator:
             RuntimeError: If budget allocation fails
         """
         try:
-            # Validate inputs
-            if not isinstance(query, str):
-                raise ValueError(f"Query must be string, got {type(query)}")
-            
+            # Validate required inputs
             if not 0.0 <= cognitive_load <= 1.0:
                 raise ValueError(f"Cognitive load must be 0-1, got {cognitive_load}")
             
@@ -166,27 +171,38 @@ class DynamicBudgetAllocator:
             max_tokens = provider_max_tokens or self.config.provider_max_tokens
             safe_max = int(max_tokens * self.config.safety_margin)
             
-            # 1. Estimate query complexity (ML-based)
-            complexity = self._estimate_complexity(query)
+            # 1. Get or estimate query complexity
+            if complexity is None:
+                if query is None:
+                    raise ValueError("Either 'complexity' or 'query' must be provided")
+                complexity = self._estimate_complexity(query)
+            else:
+                if not 0.0 <= complexity <= 1.0:
+                    raise ValueError(f"Complexity must be 0-1, got {complexity}")
             
-            # 2. Calculate emotion-based adjustment factor
+            # 2. Get or derive learning readiness
+            if learning_readiness is None:
+                learning_readiness = emotion_state.learning_readiness
+            
+            # 3. Calculate emotion-based adjustment factor
             emotion_factor = self._get_emotion_factor(emotion_state)
             
-            # 3. Calculate cognitive load factor
+            # 4. Calculate cognitive load factor
             load_factor = self._get_cognitive_load_factor(cognitive_load)
             
-            # 4. Calculate readiness factor
+            # 5. Calculate readiness factor
             readiness_factor = self._get_readiness_factor(learning_readiness)
             
-            # 5. Determine budget mode
-            mode = self._determine_budget_mode(
-                complexity, emotion_state, cognitive_load, learning_readiness
-            )
+            # 6. Get or determine budget mode
+            if mode is None:
+                mode = self._determine_budget_mode(
+                    complexity, emotion_state, cognitive_load, learning_readiness
+                )
             
-            # 6. Calculate base budget for mode
+            # 7. Calculate base budget for mode
             base_budget = self._get_base_budget_for_mode(mode)
             
-            # 7. Apply adjustment factors
+            # 8. Apply adjustment factors
             adjusted_total = int(
                 base_budget * emotion_factor * load_factor * readiness_factor
             )
@@ -195,7 +211,7 @@ class DynamicBudgetAllocator:
             adjusted_total = min(adjusted_total, safe_max)
             adjusted_total = max(adjusted_total, self.config.conservative_base)
             
-            # 8. Split between reasoning and response
+            # 9. Split between reasoning and response
             reasoning_ratio = self._calculate_reasoning_ratio(
                 complexity, emotion_state, cognitive_load
             )

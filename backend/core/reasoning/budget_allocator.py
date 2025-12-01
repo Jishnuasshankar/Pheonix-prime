@@ -22,10 +22,9 @@ logger = logging.getLogger(__name__)
 
 class BudgetMode(str, Enum):
     """Budget allocation modes"""
-    MINIMAL = "minimal"           # 500-1000 tokens (quick answers)
-    STANDARD = "standard"         # 1000-2000 tokens (normal)
-    EXTENDED = "extended"         # 2000-3500 tokens (detailed)
-    COMPREHENSIVE = "comprehensive"  # 3500-5000 tokens (struggling students)
+    CONSERVATIVE = "conservative"     # 2000-3000 tokens (cautious, high quality)
+    BALANCED = "balanced"             # 3000-5000 tokens (normal adaptive)
+    AGGRESSIVE = "aggressive"         # 5000-8000 tokens (extensive reasoning)
 
 
 class TokenBudget(BaseModel):
@@ -67,10 +66,9 @@ class BudgetConfig(BaseModel):
     All values configurable, no hardcoded defaults
     """
     # Base budgets for each mode (starting points, not limits)
-    minimal_base: int = Field(default=750, ge=500, le=1000)
-    standard_base: int = Field(default=1500, ge=1000, le=2000)
-    extended_base: int = Field(default=2750, ge=2000, le=3500)
-    comprehensive_base: int = Field(default=4250, ge=3500, le=5000)
+    conservative_base: int = Field(default=2500, ge=2000, le=3000)
+    balanced_base: int = Field(default=4000, ge=3000, le=5000)
+    aggressive_base: int = Field(default=6500, ge=5000, le=8000)
     
     # Allocation ratios (reasoning vs response)
     reasoning_ratio_min: float = Field(default=0.4, ge=0.2, le=0.6)

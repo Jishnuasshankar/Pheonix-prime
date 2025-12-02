@@ -110,15 +110,46 @@ def budget_allocator():
 @pytest.fixture
 def provider_manager():
     """Mock provider manager for testing"""
-    # Simple mock that returns predictable responses
+    # Enhanced mock that matches real ProviderManager interface
     class MockProviderManager:
-        async def generate(self, prompt, provider_name=None, max_tokens=None):
+        async def generate(
+            self,
+            prompt: str,
+            provider_name: str = None,
+            max_tokens: int = None,
+            category: str = None,
+            **kwargs
+        ):
+            """
+            Mock generate method matching real ProviderManager signature
+            
+            Args:
+                prompt: The input prompt
+                provider_name: Optional provider name
+                max_tokens: Optional token limit
+                category: Optional category for provider selection
+                **kwargs: Additional parameters
+            """
             class MockResponse:
                 content = "This is a reasoning step about the problem."
             return MockResponse()
         
-        async def select_best_model(self, category=None):
-            """Mock provider selection"""
+        async def select_best_model(
+            self,
+            category: str = None,
+            prefer_speed: bool = False,
+            min_quality_score: float = 60.0,
+            **kwargs
+        ):
+            """
+            Mock model selection matching real ProviderManager signature
+            
+            Args:
+                category: Category for model selection
+                prefer_speed: Whether to prefer speed over quality
+                min_quality_score: Minimum quality threshold
+                **kwargs: Additional parameters
+            """
             return "groq"
     
     return MockProviderManager()

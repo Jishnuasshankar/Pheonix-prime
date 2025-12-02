@@ -245,8 +245,9 @@ class DualProcessEngine:
             # Length factor with improved scaling for long queries (Issue #5b)
             word_count = len(query.split())
             if word_count > 100:
-                # Very long queries get higher complexity
-                length_score = min(0.9 + (word_count - 100) / 1000, 1.0)
+                # Very long queries get significantly higher complexity
+                # 1000 words should score 0.9+
+                length_score = min(0.6 + (word_count / 100.0), 1.0)
             else:
                 length_score = min(word_count / 50.0, 1.0)
             
@@ -256,6 +257,7 @@ class DualProcessEngine:
                 'algorithm', 'optimization', 'complexity', 'architecture',
                 'implementation', 'compilation', 'recursion', 'polymorphism',
                 'concurrency', 'distributed', 'binary', 'hash', 'encryption',
+                'database', 'acid', 'compliance', 'optimization',
                 
                 # Mathematics
                 'derivative', 'integral', 'theorem', 'proof', 'equation',
@@ -270,7 +272,12 @@ class DualProcessEngine:
                 # General Science
                 'hypothesis', 'analysis', 'synthesis', 'experiment', 'methodology',
                 'variable', 'correlation', 'causation', 'empirical', 'theoretical',
-                'molecular', 'cellular', 'genetic', 'biochemical', 'evolutionary'
+                'molecular', 'cellular', 'genetic', 'biochemical', 'evolutionary',
+                
+                # Economics & Social Sciences
+                'economic', 'implications', 'fiscal', 'monetary', 'inflation',
+                'gdp', 'deficit', 'policy', 'taxation', 'welfare', 'subsidy',
+                'incentive', 'equilibrium', 'market', 'demand', 'supply'
             ]
             
             query_lower = query.lower()

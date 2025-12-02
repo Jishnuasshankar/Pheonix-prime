@@ -117,7 +117,7 @@ class MetacognitiveController:
         Returns:
             TokenBudget with allocation details
         """
-        return await self.budget_allocator.allocate_budget(
+        return self.budget_allocator.allocate_budget(
             query=query,
             emotion_state=emotion_state,
             cognitive_load=cognitive_load,

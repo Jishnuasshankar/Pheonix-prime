@@ -202,9 +202,12 @@ class DynamicBudgetAllocator:
             # 7. Calculate base budget for mode
             base_budget = self._get_base_budget_for_mode(mode)
             
-            # 8. Apply adjustment factors
+            # 8. Apply adjustment factors including complexity
+            # Complexity impacts the budget - more complex queries get more tokens
+            complexity_factor = 0.8 + (complexity * 0.4)  # 0.8 to 1.2 range
+            
             adjusted_total = int(
-                base_budget * emotion_factor * load_factor * readiness_factor
+                base_budget * emotion_factor * load_factor * readiness_factor * complexity_factor
             )
             
             # Enforce limits

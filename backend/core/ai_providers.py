@@ -296,7 +296,7 @@ class UniversalProvider:
         self,
         provider_name: str,
         prompt: str,
-        max_tokens: int = 8192
+        max_tokens: int = 1000
     ) -> AIResponse:
         """Generate response from specified provider"""
         
@@ -638,7 +638,7 @@ class ProviderManager:
         prompt: str,
         category: str = "general",
         provider_name: Optional[str] = None,
-        max_tokens: int = 8192,
+        max_tokens: int = 1000,
         max_cost_per_1m: Optional[float] = None
     ) -> AIResponse:
         """

@@ -247,7 +247,8 @@ class DualProcessEngine:
             if word_count > 100:
                 # Very long queries get significantly higher complexity
                 # 1000 words should score 0.9+
-                length_score = min(0.6 + (word_count / 100.0), 1.0)
+                # Formula: 0.6 + log scaling for better distribution
+                length_score = min(0.6 + (word_count / 1000.0) * 0.4, 1.0)
             else:
                 length_score = min(word_count / 50.0, 1.0)
             
@@ -306,12 +307,25 @@ class DualProcessEngine:
             multi_question_bonus = min(question_count * 0.1, 0.15)
             
             # Weighted combination (rebalanced per Issue #4)
-            complexity = (
-                length_score * 0.20 +
-                tech_score * 0.45 +
-                question_score * 0.25 +
-                multi_question_bonus * 0.10
-            )
+            # Special handling for very long queries (Issue #5b)
+            if word_count > 500:
+                # Very long queries are inherently complex regardless of content
+                # Give length much more weight for extremely long queries
+                complexity = max(
+                    length_score * 0.60 +
+                    tech_score * 0.20 +
+                    question_score * 0.15 +
+                    multi_question_bonus * 0.05,
+                    0.75  # Minimum complexity for 500+ word queries
+                )
+            else:
+                # Normal weighting for typical queries
+                complexity = (
+                    length_score * 0.20 +
+                    tech_score * 0.45 +
+                    question_score * 0.25 +
+                    multi_question_bonus * 0.10
+                )
             
             return min(complexity, 1.0)
             

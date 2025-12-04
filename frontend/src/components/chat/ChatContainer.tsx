@@ -138,8 +138,8 @@ const PremiumEmptyState: React.FC<{ enableReasoning?: boolean }> = React.memo(({
         {/* Description */}
         <p className="text-white/60 text-xl mb-3 leading-relaxed font-medium max-w-2xl mx-auto">
           {enableReasoning 
-            ? 'Ask me anything! I'll show you my step-by-step thinking process.'
-            : 'Ask me anything! I'm here to help you learn with personalized, emotion-aware responses.'}
+            ? "Ask me anything! I'll show you my step-by-step thinking process."
+            : "Ask me anything! I'm here to help you learn with personalized, emotion-aware responses."}
         </p>
         
         <p className="text-white/40 text-base mb-10 leading-relaxed font-medium">

@@ -387,7 +387,6 @@ export const MainApp: React.FC<MainAppProps> = ({
   // Sidebar states
   const [chatSidebarOpen, setChatSidebarOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
-  const [deepThinkingEnabled, setDeepThinkingEnabled] = useState(false);
 
   // -------------------------------------------------------------------------
   // Effects
@@ -565,22 +564,6 @@ export const MainApp: React.FC<MainAppProps> = ({
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Deep Thinking Toggle */}
-              <button
-                onClick={() => setDeepThinkingEnabled(!deepThinkingEnabled)}
-                className={cn(
-                  "px-4 py-2 rounded-xl transition-all duration-200 flex items-center gap-2 font-medium text-sm",
-                  deepThinkingEnabled
-                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30"
-                    : "bg-white/[0.05] text-white/60 border border-white/[0.08] hover:bg-white/[0.08]"
-                )}
-                aria-label={deepThinkingEnabled ? "Disable Deep Thinking" : "Enable Deep Thinking"}
-                title={deepThinkingEnabled ? "Deep Thinking Mode Active" : "Enable Deep Thinking Mode"}
-              >
-                <Brain className="w-4 h-4" />
-                <span>{deepThinkingEnabled ? "Deep Thinking ON" : "Deep Thinking OFF"}</span>
-              </button>
-              
               <button 
                 onClick={() => setToolsPanelOpen(!toolsPanelOpen)}
                 className="p-2.5 hover:bg-white/[0.08] rounded-xl transition-all duration-200"
@@ -591,13 +574,9 @@ export const MainApp: React.FC<MainAppProps> = ({
             </div>
           </header>
 
-          {/* Chat Container - With Deep Thinking Integration */}
+          {/* Chat Container - Preserve original component and all functionality */}
           <div className="flex-1 overflow-hidden" data-testid="chat-container">
-            <ChatContainer
-              enableReasoning={deepThinkingEnabled}
-              showEmotion={true}
-              enableVoice={true}
-            />
+            <ChatContainer />
           </div>
 
           {/* WebSocket Status Indicator (Dev mode) - Preserve functionality */}

@@ -134,9 +134,28 @@ async def lifespan(app: FastAPI):
         # Initialize engine
         app.state.engine = MasterXEngine()
         
-        # Initialize emotion engine (loads ML models)
-        await app.state.engine.emotion_engine.initialize()
-        logger.info("✅ Emotion engine initialized")
+        # Initialize emotion engine (loads ML models) - NON-BLOCKING
+        # ML models can be large and slow to download, so we do this in background
+        try:
+            # Set a timeout for emotion engine initialization
+            import asyncio
+            async def init_emotion_engine():
+                try:
+                    await asyncio.wait_for(
+                        app.state.engine.emotion_engine.initialize(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                    logger.info("✅ Emotion engine initialized")
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Emotion engine initialization timed out - will continue in background")
+                except Exception as e:
+                    logger.warning(f"⚠️ Emotion engine initialization failed: {e} - feature will be disabled")
+            
+            # Start initialization in background
+            asyncio.create_task(init_emotion_engine())
+            logger.info("⏳ Emotion engine initializing in background...")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to start emotion engine initialization: {e}")
         
         # Get database
         from utils.database import get_database
@@ -179,8 +198,17 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Collaboration engine initialization failed: {e}")
             app.state.collaboration = None
         
-        # Initialize external benchmarking system (Phase 2)
-        await app.state.engine.provider_manager.initialize_external_benchmarks(db)
+        # Initialize external benchmarking system (Phase 2) - NON-BLOCKING
+        try:
+            await asyncio.wait_for(
+                app.state.engine.provider_manager.initialize_external_benchmarks(db),
+                timeout=10.0  # 10 second timeout for external API calls
+            )
+            logger.info("✅ External benchmarking system initialized")
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ External benchmarking initialization timed out - using defaults")
+        except Exception as e:
+            logger.warning(f"⚠️ External benchmarking initialization failed: {e} - using defaults")
         
         # Initialize dynamic pricing engine (Phase 8 - Dynamic Model System)
         from core.dynamic_pricing import get_pricing_engine
@@ -211,9 +239,16 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Background pricing updates scheduled (12h)")
         
         # Initialize intelligence layer (Phase 3: context + adaptive learning + RAG)
-        await app.state.engine.initialize_intelligence_layer(db)
-        
-        logger.info("✅ Phase 3 intelligence layer initialized (context + adaptive + RAG)")
+        try:
+            await asyncio.wait_for(
+                app.state.engine.initialize_intelligence_layer(db),
+                timeout=15.0  # 15 second timeout
+            )
+            logger.info("✅ Phase 3 intelligence layer initialized (context + adaptive + RAG)")
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Intelligence layer initialization timed out - some features may be limited")
+        except Exception as e:
+            logger.warning(f"⚠️ Intelligence layer initialization failed: {e} - some features may be limited")
         
         # Phase 4: Initialize optimization layer
         from optimization.caching import init_cache_manager
@@ -255,10 +290,14 @@ async def lifespan(app: FastAPI):
         rate_limiter.start_cleanup_task()
         logger.info("✅ Rate limiter initialized and cleanup task started")
         
+        logger.info("=" * 80)
         logger.info("✅ MasterX server started successfully with FULL PHASE 8C PRODUCTION READINESS")
         logger.info(f"📊 Available AI providers: {app.state.engine.get_available_providers()}")
         logger.info("⚡ Model selection: Fully dynamic (quality + cost + speed + availability)")
         logger.info("🛡️ Production features: Health monitoring ✓ Cost enforcement ✓ Graceful shutdown ✓")
+        logger.info("🚀 Server is READY and listening on http://0.0.0.0:8001")
+        logger.info("📚 API Documentation: http://0.0.0.0:8001/docs")
+        logger.info("=" * 80)
         
     except Exception as e:
         logger.error(f"❌ Failed to start server: {e}", exc_info=True)

@@ -1,25 +1,32 @@
 /**
- * ChatContainer Component - WITH DEEP THINKING INTEGRATION
+ * ChatContainer Component - Premium Enhanced Main Chat Interface
  * 
- * Production-ready integration of reasoning/deep thinking features into chat.
+ * WCAG 2.1 AA Compliant:
+ * - Landmark <main> element
+ * - Keyboard navigation (Tab, Arrow keys)
+ * - Screen reader announcements for new messages
+ * - Focus management (auto-focus on input after message)
  * 
- * WCAG 2.1 AA Compliant + Deep Thinking Features:
- * - All existing accessibility features maintained
- * - Reasoning toggle with keyboard support
- * - Live reasoning chain display
- * - Error boundaries for reasoning failures
- * 
- * Deep Thinking Integration Points:
- * 1. Reasoning toggle in UI
- * 2. Dual API support (regular chat vs reasoning chat)
- * 3. Reasoning chain display in messages
- * 4. Thinking mode selection
- * 5. Real-time reasoning step streaming (future)
+ * Performance:
+ * - Virtual scrolling for large message lists (>100 messages)
+ * - Lazy loading of message history
+ * - Optimistic UI updates (instant message display)
+ * - Debounced typing indicators
+ * - GPU-accelerated animations (60fps)
  * 
  * Backend Integration:
- * - POST /api/v1/chat/reasoning - Send reasoning-enabled message
- * - POST /api/v1/chat - Send regular message (existing)
- * - WebSocket for real-time updates (existing)
+ * - POST /api/v1/chat - Send message and get AI response
+ * - WebSocket connection for real-time emotion updates
+ * - Session persistence in MongoDB
+ * - Automatic reconnection on network issues
+ * 
+ * Premium Features:
+ * - Glassmorphism effects with multi-layer depth
+ * - Animated gradient orbs (living background)
+ * - Premium empty state with floating elements
+ * - Enhanced connection status bar
+ * - Premium loading spinner
+ * - Smooth 60fps animations
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -27,45 +34,65 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useChatStore } from '@/store/chatStore';
 import { useEmotionStore } from '@/store/emotionStore';
 import { useAuthStore } from '@/store/authStore';
-import { useReasoningStore } from '@/store/reasoningStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { joinSession, leaveSession } from '@/services/websocket/socket.handlers';
-import { chatWithReasoning } from '@/services/api/reasoning';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { EmotionIndicator } from './EmotionIndicator';
 import { TypingIndicator } from './TypingIndicator';
 import { VoiceButton } from './VoiceButton';
-import { ReasoningToggle } from '@/components/reasoning/ReasoningToggle';
-import { ThinkingIndicator } from '@/components/reasoning/ThinkingIndicator';
-import { ReasoningChainDisplay } from '@/components/reasoning/ReasoningChainDisplay';
+import { SuggestedQuestions } from './SuggestedQuestions';
 import { cn } from '@/utils/cn';
 import { toast } from '@/components/ui/Toast';
-import { AlertCircle, Wifi, WifiOff, Sparkles, Brain } from 'lucide-react';
-import type { ThinkingMode } from '@/types/reasoning.types';
+import { AlertCircle, Wifi, WifiOff, Sparkles } from 'lucide-react';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 export interface ChatContainerProps {
+  /**
+   * Session ID to load (optional, creates new if not provided)
+   */
   sessionId?: string;
+  
+  /**
+   * Initial topic for new session
+   * @default "general"
+   */
   initialTopic?: string;
+  
+  /**
+   * Show emotion indicator
+   * @default true
+   */
   showEmotion?: boolean;
+  
+  /**
+   * Enable voice interaction
+   * @default true
+   */
   enableVoice?: boolean;
-  enableReasoning?: boolean;
+  
+  /**
+   * Additional CSS classes
+   */
   className?: string;
 }
 
+/**
+ * Connection status for real-time updates
+ */
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
 
 // ============================================================================
-// PREMIUM EMPTY STATE (Unchanged)
+// PREMIUM EMPTY STATE COMPONENT (INLINE)
 // ============================================================================
 
 const PremiumEmptyState: React.FC = React.memo(() => {
   return (
     <div className="flex-1 flex items-center justify-center px-8 relative overflow-hidden">
+      {/* Animated gradient orbs - Living background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div 
           className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full blur-3xl opacity-30"
@@ -82,9 +109,17 @@ const PremiumEmptyState: React.FC = React.memo(() => {
             animationDelay: '-10s'
           }}
         />
+        <div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full blur-3xl opacity-20"
+          style={{ 
+            background: 'radial-gradient(circle, rgba(236, 72, 153, 0.4), transparent 70%)',
+            animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+          }}
+        />
       </div>
       
       <div className="relative z-10 text-center max-w-3xl">
+        {/* Hero emoji with depth */}
         <div className="mb-10 relative inline-block">
           <div 
             className="absolute inset-0 rounded-full blur-3xl opacity-50"
@@ -106,6 +141,7 @@ const PremiumEmptyState: React.FC = React.memo(() => {
           </div>
         </div>
         
+        {/* Main greeting with animated gradient */}
         <h2 className="text-2xl font-black mb-4 tracking-tight leading-tight">
           <span 
             className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent"
@@ -118,14 +154,16 @@ const PremiumEmptyState: React.FC = React.memo(() => {
           </span>
         </h2>
         
+        {/* Description */}
         <p className="text-white/60 text-xl mb-3 leading-relaxed font-medium max-w-2xl mx-auto">
           Ask me anything! I'm here to help you learn with personalized, emotion-aware responses.
         </p>
         
         <p className="text-white/40 text-base mb-10 leading-relaxed font-medium">
-          Powered by advanced AI with real-time emotion detection and deep thinking
+          Powered by advanced AI with real-time emotion detection
         </p>
         
+        {/* Premium badges with hover animations */}
         <div className="flex items-center justify-center gap-3 flex-wrap">
           <div 
             className="px-4 py-2 rounded-full border backdrop-blur-xl transition-all duration-300 hover:scale-105"
@@ -147,14 +185,13 @@ const PremiumEmptyState: React.FC = React.memo(() => {
             <span className="text-xs font-bold tracking-widest text-blue-400">EMOTION-AWARE</span>
           </div>
           <div 
-            className="px-4 py-2 rounded-full backdrop-blur-xl border transition-all duration-300 hover:scale-105 flex items-center gap-2"
+            className="px-4 py-2 rounded-full backdrop-blur-xl border transition-all duration-300 hover:scale-105"
             style={{
               background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(252, 211, 77, 0.2))',
               borderColor: 'rgba(236, 72, 153, 0.3)'
             }}
           >
-            <Brain className="w-3.5 h-3.5 text-pink-400" />
-            <span className="text-xs font-bold tracking-widest text-pink-400">DEEP THINKING</span>
+            <span className="text-xs font-bold tracking-widest text-pink-400">ULTRA MODE</span>
           </div>
         </div>
       </div>
@@ -165,7 +202,7 @@ const PremiumEmptyState: React.FC = React.memo(() => {
 PremiumEmptyState.displayName = 'PremiumEmptyState';
 
 // ============================================================================
-// CONNECTION STATUS BAR (Unchanged)
+// PREMIUM CONNECTION STATUS BAR (INLINE)
 // ============================================================================
 
 const PremiumConnectionStatus: React.FC<{ status: ConnectionStatus }> = React.memo(({ status }) => {
@@ -207,12 +244,13 @@ const PremiumConnectionStatus: React.FC<{ status: ConnectionStatus }> = React.me
 PremiumConnectionStatus.displayName = 'PremiumConnectionStatus';
 
 // ============================================================================
-// LOADING STATE (Unchanged)
+// PREMIUM LOADING STATE (INLINE)
 // ============================================================================
 
 const PremiumLoadingState: React.FC = React.memo(() => {
   return (
     <div className="flex items-center justify-center h-full relative overflow-hidden">
+      {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div 
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full blur-3xl opacity-30"
@@ -224,6 +262,7 @@ const PremiumLoadingState: React.FC = React.memo(() => {
       </div>
       
       <div className="text-center space-y-6 relative z-10">
+        {/* Premium dual-ring spinner */}
         <div className="relative w-20 h-20 mx-auto">
           <div 
             className="absolute inset-0 rounded-full border-4 border-transparent"
@@ -255,7 +294,7 @@ const PremiumLoadingState: React.FC = React.memo(() => {
 PremiumLoadingState.displayName = 'PremiumLoadingState';
 
 // ============================================================================
-// MAIN COMPONENT - WITH DEEP THINKING INTEGRATION
+// MAIN COMPONENT - PREMIUM ENHANCED
 // ============================================================================
 
 export const ChatContainer: React.FC<ChatContainerProps> = ({
@@ -263,13 +302,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   initialTopic = 'general',
   showEmotion = true,
   enableVoice = true,
-  enableReasoning = true,
   className
 }) => {
   // ============================================================================
   // STATE & REFS
   // ============================================================================
   
+  // Store hooks
   const { user } = useAuthStore();
   const {
     messages,
@@ -279,27 +318,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     sendMessage: storeSendMessage,
     loadHistory,
     clearError,
+    setTyping,
     suggestedQuestions,
     clearSuggestedQuestions
   } = useChatStore();
   
   const {
-    currentEmotion
+    currentEmotion,
+    isAnalyzing
   } = useEmotionStore();
-  
-  const {
-    currentChain,
-    setCurrentChain,
-    addChain,
-    preferences
-  } = useReasoningStore();
   
   // Local state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [reasoningEnabled, setReasoningEnabled] = useState(preferences.showReasoningByDefault);
-  const [isReasoningInProgress, setIsReasoningInProgress] = useState(false);
-  const [thinkingMode] = useState<ThinkingMode | undefined>(undefined);
   
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -313,27 +344,32 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const activeSessionId = propSessionId || urlSessionId || storeSessionId;
   
   // ============================================================================
-  // WEBSOCKET CONNECTION
+  // WEBSOCKET CONNECTION - Real-time updates
   // ============================================================================
   
   const { isConnected, subscribe, emit: sendEvent } = useWebSocket();
   
+  // Update connection status based on WebSocket state
   useEffect(() => {
     setConnectionStatus(isConnected ? 'connected' : 'disconnected');
   }, [isConnected]);
   
+  // Join/leave session for real-time updates
   useEffect(() => {
     if (!activeSessionId) return;
     
+    // ✅ Try to join if WebSocket connected, but don't block if it fails
     if (isConnected) {
       try {
         joinSession(activeSessionId);
         console.log('✓ Joined chat session:', activeSessionId);
       } catch (err) {
         console.warn('⚠️ Failed to join WebSocket session:', err);
+        // Non-blocking - HTTP chat will still work
       }
     }
     
+    // Leave session on unmount or session change
     return () => {
       if (isConnected) {
         try {
@@ -341,20 +377,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           console.log('✓ Left chat session:', activeSessionId);
         } catch (err) {
           console.warn('⚠️ Failed to leave WebSocket session:', err);
+          // Non-blocking
         }
       }
     };
   }, [isConnected, activeSessionId]);
   
+  // Subscribe to real-time events (emotion updates, typing indicators are handled in socket.handlers.ts)
   useEffect(() => {
     if (!isConnected) return;
     
+    // Subscribe to session-specific updates
     const unsubscribe = subscribe('session_update', (data: any) => {
       console.log('Session update:', data);
+      // Additional session-specific logic can be added here
     });
     
     return unsubscribe;
   }, [isConnected, subscribe]);
+  
   
   // ============================================================================
   // SESSION INITIALIZATION
@@ -369,8 +410,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     const initializeSession = async () => {
       try {
         if (activeSessionId) {
+          // Load existing session messages
           await loadHistory(activeSessionId);
         }
+        // If no session ID, a new one will be created when first message is sent
         
         setIsInitialized(true);
       } catch (err) {
@@ -385,7 +428,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [activeSessionId, user, navigate, loadHistory]);
   
   // ============================================================================
-  // AUTO-SCROLL
+  // AUTO-SCROLL TO BOTTOM (Optimized to prevent excessive re-renders)
   // ============================================================================
   
   const scrollToBottom = useCallback(() => {
@@ -393,105 +436,43 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, []);
   
   useEffect(() => {
+    // Only scroll when new messages are added, not on every render
     if (messages.length > 0) {
+      // Use requestAnimationFrame to prevent layout thrashing
       requestAnimationFrame(() => {
         scrollToBottom();
       });
     }
-  }, [messages.length, scrollToBottom]);
+  }, [messages.length, scrollToBottom]); // Only trigger on message count change
   
   // ============================================================================
-  // MESSAGE SENDING - DUAL STRATEGY (Regular vs Reasoning)
+  // MESSAGE SENDING HANDLER
   // ============================================================================
   
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !user) return;
     
     try {
-      // Clear any previous error
-      clearError();
+      await storeSendMessage(content.trim(), user.id);
       
-      if (reasoningEnabled && enableReasoning) {
-        // DEEP THINKING PATH: Use reasoning-enabled endpoint
-        setIsReasoningInProgress(true);
-        
+      // WebSocket event for real-time updates (other tabs/devices)
+      if (storeSessionId && isConnected) {
         try {
-          const reasoningResponse = await chatWithReasoning({
-            user_id: user.id,
-            session_id: activeSessionId || undefined,
-            message: content.trim(),
-            enable_reasoning: true,
-            thinking_mode: thinkingMode,
-            max_reasoning_depth: 5
+          sendEvent({
+            type: 'message_sent',
+            sessionId: storeSessionId,
+            userId: user.id
           });
-          
-          // Store reasoning chain if present
-          if (reasoningResponse.reasoning_chain) {
-            setCurrentChain(reasoningResponse.reasoning_chain);
-            if (reasoningResponse.session_id) {
-              addChain(reasoningResponse.session_id, reasoningResponse.reasoning_chain);
-            }
-          }
-          
-          // Add user message to chat (optimistic)
-          await storeSendMessage(content.trim(), user.id);
-          
-          // Clear reasoning state
-          setIsReasoningInProgress(false);
-          
-          // WebSocket notification
-          if (reasoningResponse.session_id && isConnected) {
-            try {
-              sendEvent({
-                type: 'message_sent',
-                sessionId: reasoningResponse.session_id,
-                userId: user.id,
-                reasoning_enabled: true
-              });
-            } catch (wsErr) {
-              console.warn('WebSocket notification failed (non-critical):', wsErr);
-            }
-          }
-          
-          // Success toast for reasoning mode
-          toast.success('Deep Thinking Complete', {
-            description: `Used ${reasoningResponse.thinking_mode || 'adaptive'} thinking mode`
-          });
-          
-        } catch (reasoningErr) {
-          console.error('Reasoning request failed:', reasoningErr);
-          setIsReasoningInProgress(false);
-          
-          // Fallback to regular chat on reasoning failure
-          toast.warning('Reasoning Unavailable', {
-            description: 'Falling back to regular chat mode'
-          });
-          
-          await storeSendMessage(content.trim(), user.id);
-        }
-        
-      } else {
-        // REGULAR CHAT PATH: Use existing endpoint
-        await storeSendMessage(content.trim(), user.id);
-        
-        // WebSocket event
-        if (storeSessionId && isConnected) {
-          try {
-            sendEvent({
-              type: 'message_sent',
-              sessionId: storeSessionId,
-              userId: user.id
-            });
-          } catch (wsErr) {
-            console.warn('WebSocket notification failed (non-critical):', wsErr);
-          }
+        } catch (wsErr) {
+          console.warn('WebSocket notification failed (non-critical):', wsErr);
+          // Non-blocking - message already sent via HTTP
         }
       }
       
     } catch (err: any) {
       console.error('Failed to send message:', err);
       
-      // Comprehensive error handling
+      // Determine specific error message
       let errorTitle = 'Send Failed';
       let errorMessage = 'Failed to send message. Please try again.';
       
@@ -523,46 +504,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         description: errorMessage
       });
     }
-  }, [
-    user,
-    reasoningEnabled,
-    enableReasoning,
-    thinkingMode,
-    activeSessionId,
-    storeSendMessage,
-    storeSessionId,
-    isConnected,
-    sendEvent,
-    clearError,
-    setCurrentChain,
-    addChain
-  ]);
+  }, [user, storeSendMessage, storeSessionId, isConnected, sendEvent]);
   
   // ============================================================================
   // SUGGESTED QUESTIONS HANDLER
   // ============================================================================
   
-  const handleSuggestedQuestionClick = useCallback(async (question: string) => {
+  const handleSuggestedQuestionClick = useCallback(async (question: string, questionData: any) => {
+    // Clear suggested questions when user clicks one
     clearSuggestedQuestions();
+    
+    // Send the question as a regular message
     await handleSendMessage(question);
   }, [handleSendMessage, clearSuggestedQuestions]);
-  
-  // ============================================================================
-  // REASONING TOGGLE HANDLER
-  // ============================================================================
-  
-  const handleReasoningToggle = useCallback((enabled: boolean) => {
-    setReasoningEnabled(enabled);
-    
-    toast.success(
-      enabled ? 'Deep Thinking Enabled' : 'Deep Thinking Disabled',
-      {
-        description: enabled 
-          ? 'AI will show its reasoning process step-by-step'
-          : 'AI will provide direct answers'
-      }
-    );
-  }, []);
   
   // ============================================================================
   // ERROR HANDLING
@@ -577,7 +531,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [error]);
   
   // ============================================================================
-  // LOADING STATE
+  // LOADING STATE - PREMIUM ENHANCED
   // ============================================================================
   
   if (!isInitialized) {
@@ -585,7 +539,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }
   
   // ============================================================================
-  // RENDER - WITH REASONING INTEGRATION
+  // RENDER - PREMIUM ENHANCED
   // ============================================================================
   
   return (
@@ -599,12 +553,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         background: 'linear-gradient(to bottom, #0a0a0f, #0d0d15)'
       }}
       role="main"
-      aria-label="Chat interface with deep thinking"
+      aria-label="Chat interface"
     >
-      {/* Connection Status Bar */}
+      {/* Premium Connection Status Bar */}
       <PremiumConnectionStatus status={connectionStatus} />
       
-      {/* Floating Emotion Indicator */}
+      {/* Floating Emotion Indicator with Premium Glassmorphism */}
       {showEmotion && currentEmotion && (
         <div className="absolute top-6 right-6 z-20">
           <div 
@@ -624,7 +578,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         </div>
       )}
       
-      {/* Message List or Empty State */}
+      {/* Message List or Premium Empty State */}
       {messages.length === 0 && !isLoading ? (
         <PremiumEmptyState />
       ) : (
@@ -636,41 +590,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             onQuestionClick={handleSuggestedQuestionClick}
           />
           
-          {/* Reasoning Chain Display (if reasoning in progress and chain available) */}
-          {isReasoningInProgress && currentChain && (
+          {/* Premium Typing Indicator - CENTERED */}
+          {isLoading && (
             <div className="px-8 py-4">
               <div className="mx-auto" style={{ maxWidth: '768px' }}>
-                <ReasoningChainDisplay
-                  reasoning={currentChain}
-                  isStreaming={isReasoningInProgress}
-                />
+                <TypingIndicator />
               </div>
             </div>
           )}
           
-          {/* Thinking Indicator (when reasoning is in progress but no chain yet) */}
-          {(isLoading || isReasoningInProgress) && (
-            <div className="px-8 py-4">
-              <div className="mx-auto" style={{ maxWidth: '768px' }}>
-                {reasoningEnabled ? (
-                  <ThinkingIndicator
-                    mode={(thinkingMode as ThinkingMode) || ThinkingMode.HYBRID}
-                    currentStep={currentChain?.steps.length}
-                    totalSteps={5}
-                  />
-                ) : (
-                  <TypingIndicator />
-                )}
-              </div>
-            </div>
-          )}
-          
+          {/* Auto-scroll anchor */}
           <div ref={messageEndRef} />
         </div>
       )}
       
-      {/* Message Input Area */}
+      {/* Premium Message Input Area - CENTERED WITH AMBIENT GLOW */}
       <div className="border-t border-white/[0.08] backdrop-blur-2xl p-8 relative">
+        {/* Ambient bottom glow */}
         <div 
           className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
@@ -679,41 +615,25 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         />
         
         <div className="relative z-10 max-w-5xl mx-auto">
-          {/* Reasoning Toggle */}
-          {enableReasoning && (
-            <div className="mb-4 flex justify-end">
-              <ReasoningToggle
-                enabled={reasoningEnabled}
-                onChange={handleReasoningToggle}
-                disabled={isLoading || isReasoningInProgress}
-                showLabel
-              />
-            </div>
-          )}
-          
           <div className="flex items-end gap-4">
-            {/* Voice Button */}
+            {/* Voice Button with Premium Styling */}
             {enableVoice && (
               <div className="flex-shrink-0">
                 <VoiceButton
                   onTranscription={handleSendMessage}
-                  disabled={isLoading || isReasoningInProgress || !isConnected}
+                  disabled={isLoading || !isConnected}
                 />
               </div>
             )}
             
-            {/* Text Input */}
+            {/* Premium Text Input */}
             <div className="flex-1">
               <MessageInput
                 onSend={handleSendMessage}
-                disabled={isLoading || isReasoningInProgress}
+                disabled={isLoading}
                 placeholder={
-                  isReasoningInProgress
-                    ? 'AI is thinking deeply...'
-                    : isLoading
+                  isLoading
                     ? 'AI is thinking...'
-                    : reasoningEnabled
-                    ? 'Ask anything... (Deep Thinking Mode)'
                     : 'Message MasterX...'
                 }
                 enableAttachments={false}
@@ -721,7 +641,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 showCounter={true}
               />
               
-              {/* Connection Warning */}
+              {/* Connection Warning (Premium styled) */}
               {!isConnected && (
                 <div className="mt-2 flex items-center gap-2 text-xs text-yellow-400/80 font-medium">
                   <WifiOff className="w-3.5 h-3.5" />
@@ -731,7 +651,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             </div>
           </div>
           
-          {/* Status Footer */}
+          {/* Suggested Questions REMOVED - Now shown after each AI response in Message component */}
+          
+          {/* Premium Status Footer */}
           <div className="mt-4 flex items-center justify-between text-xs text-white/30 font-medium">
             <div className="flex items-center gap-4">
               <span
@@ -746,13 +668,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 )} />
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
-              
-              {reasoningEnabled && (
-                <span className="flex items-center gap-1.5 text-purple-400">
-                  <Brain className="w-3 h-3" />
-                  Deep Thinking Active
-                </span>
-              )}
               
               {storeSessionId && (
                 <span className="text-white/20">
@@ -772,7 +687,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         </div>
       </div>
       
-      {/* Premium Animations CSS */}
+      {/* Inject Premium Animations CSS */}
       <style>{`
         @keyframes wave {
           0%, 100% { transform: rotate(0deg); }
@@ -783,7 +698,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         @keyframes float {
           0%, 100% { transform: translate(0, 0) rotate(0deg); }
           33% { transform: translate(30px, -30px) rotate(5deg); }
-          66% { transform: translate(-30px, 30px) rotate(-5deg); }
+          66% { transform: translate(-20px, 20px) rotate(-5deg); }
         }
         
         @keyframes gradient {
@@ -791,18 +706,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           50% { background-position: 100% 50%; }
         }
         
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        
         @keyframes spin {
-          from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
       `}</style>
     </div>
   );
 };
+
+ChatContainer.displayName = 'ChatContainer';
 
 export default ChatContainer;

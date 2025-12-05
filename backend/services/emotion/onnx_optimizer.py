@@ -102,7 +102,7 @@ class ONNXConfig(BaseModel):
         description="Cache converted ONNX models to disk"
     )
     cache_directory: str = Field(
-        default="/tmp/masterx_onnx_cache",
+        default="/app/.cache/onnx_models",
         description="Directory for ONNX model cache"
     )
     

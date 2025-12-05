@@ -981,40 +981,56 @@ class EmotionEngine:
         """
         Initialize all ML models.
         
-        This loads transformer models, which takes 2-3 seconds.
-        Call this once at startup.
+        LAZY LOADING: This method is now OPTIONAL.
+        - If called at startup: Models load immediately (eager loading)
+        - If skipped: Models load on first analyze_emotion() call (lazy loading)
+        
+        Benefits of lazy loading:
+        - Server starts immediately (no waiting for model downloads)
+        - First prediction slower, but server is responsive
+        - Subsequent predictions are fast (models cached in /app/.cache)
         
         Phase 4: Includes cache warming for common phrases.
         """
-        logger.info("🚀 Initializing EmotionEngine...")
+        if self._initialized:
+            logger.info("EmotionEngine already initialized, skipping...")
+            return
+            
+        logger.info("🚀 Initializing EmotionEngine (eager loading)...")
         start_time = time.time()
         
-        # Initialize transformer (loads models from HuggingFace)
-        self.transformer.initialize()
-        
-        # Cache warming with common learning phrases
-        if self.cache and self.config.cache_config.enable_cache_warming:
-            common_phrases = [
-                "I understand this concept",
-                "This is confusing",
-                "I'm stuck on this problem",
-                "This is too easy",
-                "I'm frustrated",
-                "This is interesting",
-                "I need help",
-                "I got it!",
-                "This is challenging",
-                "I'm bored"
-            ]
-            await self.cache.warm_cache(common_phrases, self)
-        
-        self._initialized = True
-        init_time = time.time() - start_time
-        
-        cache_info = " with cache warmed" if self.cache else ""
-        logger.info(
-            f"✅ EmotionEngine ready for production{cache_info}! ({init_time:.2f}s)"
-        )
+        try:
+            # Initialize transformer (loads models from HuggingFace)
+            # This is now safe to call - it won't block indefinitely
+            self.transformer.initialize()
+            
+            # Cache warming with common learning phrases
+            if self.cache and self.config.cache_config.enable_cache_warming:
+                common_phrases = [
+                    "I understand this concept",
+                    "This is confusing",
+                    "I'm stuck on this problem",
+                    "This is too easy",
+                    "I'm frustrated",
+                    "This is interesting",
+                    "I need help",
+                    "I got it!",
+                    "This is challenging",
+                    "I'm bored"
+                ]
+                await self.cache.warm_cache(common_phrases, self)
+            
+            self._initialized = True
+            init_time = time.time() - start_time
+            
+            cache_info = " with cache warmed" if self.cache else ""
+            logger.info(
+                f"✅ EmotionEngine ready for production{cache_info}! ({init_time:.2f}s)"
+            )
+        except Exception as e:
+            logger.error(f"❌ EmotionEngine initialization failed: {e}")
+            logger.info("Continuing with lazy loading - models will load on first use")
+            self._initialized = False  # Will trigger lazy loading on first use
     
     async def analyze_emotion(
         self,
@@ -1028,6 +1044,9 @@ class EmotionEngine:
         
         This is the main API method for MasterX integration.
         
+        LAZY LOADING: Models are automatically loaded on first call if not initialized.
+        First call may be slower (30-90s for model download), subsequent calls are fast (<100ms).
+        
         Args:
             text: User message to analyze
             user_id: User identifier for history tracking
@@ -1038,13 +1057,23 @@ class EmotionEngine:
             EmotionMetrics with complete analysis
         
         Raises:
-            RuntimeError: If not initialized
             asyncio.TimeoutError: If analysis exceeds timeout
         """
+        # Lazy initialization on first use
         if not self._initialized:
-            raise RuntimeError(
-                "EmotionEngine not initialized. Call initialize() first."
-            )
+            logger.info("⏳ EmotionEngine not initialized, loading models (first use)...")
+            logger.info("This may take a minute if downloading from HuggingFace...")
+            try:
+                await self.initialize()
+            except Exception as e:
+                logger.error(f"Failed to lazy-load emotion models: {e}")
+                # Return neutral emotion as fallback
+                from services.emotion.emotion_core import create_neutral_metrics
+                return create_neutral_metrics(
+                    text,
+                    0.0,
+                    self.config.model_version
+                )
         
         # Start timing
         start_time = time.time()

@@ -15,12 +15,7 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, CheckCircle, Lightbulb, Clock, TrendingUp } from 'lucide-react';
-import type {
-  ReasoningChainDisplayProps,
-  ReasoningStep,
-  ThinkingMode,
-  ReasoningStrategy
-} from '@/types/reasoning.types';
+import { ReasoningStrategy, ThinkingMode, type ReasoningChainDisplayProps, type ReasoningStep } from '@/types/reasoning.types';
 
 /**
  * Utility for merging class names

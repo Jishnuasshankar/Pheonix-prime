@@ -79,3 +79,5 @@ agenthub/agents/youtube/db
 # Mobile development
 android-sdk/ backend/venv/lib/python3.13/site-packages/torch/lib/libtorch_cpu.dylib
 backend/venv/lib/python3.13/site-packages/torch/lib/libtorch_cpu.dylib
+backend/.cache/emotion_models/models--cirimus--modernbert-base-go-emotions/blobs/d9e566181b696d442cfa6994597d8b2dc249aff2c0f05203267a2e9a8c6bd014
+backend/.cache/emotion_models/models--SamLowe--roberta-base-go_emotions/blobs/84d6d338b4cf63f0ed3c990a0ce748d32d1d2965c072f4645accaa71af3888c0

@@ -134,28 +134,30 @@ async def lifespan(app: FastAPI):
         # Initialize engine
         app.state.engine = MasterXEngine()
         
-        # Initialize emotion engine (loads ML models) - NON-BLOCKING
-        # ML models can be large and slow to download, so we do this in background
+        # Initialize emotion engine with LAZY LOADING
+        # Models will load on first use, allowing server to start immediately
+        # This prevents hanging on large model downloads from HuggingFace
         try:
-            # Set a timeout for emotion engine initialization
-            import asyncio
-            async def init_emotion_engine():
-                try:
-                    await asyncio.wait_for(
-                        app.state.engine.emotion_engine.initialize(),
-                        timeout=30.0  # 30 second timeout
-                    )
-                    logger.info("✅ Emotion engine initialized")
-                except asyncio.TimeoutError:
-                    logger.warning("⚠️ Emotion engine initialization timed out - will continue in background")
-                except Exception as e:
-                    logger.warning(f"⚠️ Emotion engine initialization failed: {e} - feature will be disabled")
+            logger.info("📝 Emotion engine configured with lazy loading")
+            logger.info("   Models will load automatically on first emotion analysis request")
+            logger.info("   Cached in: /app/.cache/emotion_models (persistent)")
             
-            # Start initialization in background
-            asyncio.create_task(init_emotion_engine())
-            logger.info("⏳ Emotion engine initializing in background...")
+            # Optional: Try eager loading in background (non-blocking, no timeout)
+            # If it fails, lazy loading will handle it on first use
+            async def try_eager_init():
+                try:
+                    logger.info("⏳ Attempting eager model loading in background...")
+                    await app.state.engine.emotion_engine.initialize()
+                    logger.info("✅ Emotion models loaded successfully (eager)")
+                except Exception as e:
+                    logger.info(f"ℹ️  Eager loading skipped: {e}")
+                    logger.info("   Models will load on first use (lazy loading)")
+            
+            # Start background loading (fire-and-forget, no timeout)
+            asyncio.create_task(try_eager_init())
         except Exception as e:
-            logger.warning(f"⚠️ Failed to start emotion engine initialization: {e}")
+            logger.warning(f"⚠️ Emotion engine setup warning: {e}")
+            logger.info("   Lazy loading will still work on first use")
         
         # Get database
         from utils.database import get_database

@@ -481,29 +481,18 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       
       // Determine which endpoint to use
       if (enableReasoning) {
-        // Use reasoning endpoint
-        const response = await fetch(`${process.env.REACT_APP_BACKEND_URL || ''}/api/v1/chat/reasoning`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            user_id: user.id,
-            session_id: storeSessionId || undefined,
-            message: content.trim(),
-            enable_reasoning: true,
-            thinking_mode: undefined, // Let engine auto-select
-            max_reasoning_depth: 5,
-            context: {}
-          })
+        // FIX: Use reasoning API client instead of raw fetch
+        const { chatWithReasoning } = await import('@/services/api/reasoning');
+        
+        const reasoningResponse = await chatWithReasoning({
+          user_id: user.id,
+          session_id: storeSessionId || undefined,
+          message: content.trim(),
+          enable_reasoning: true,
+          thinking_mode: undefined, // Let engine auto-select
+          max_reasoning_depth: 5,
+          context: {}
         });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-          throw new Error(errorData.detail || `HTTP ${response.status}`);
-        }
-        
-        const reasoningResponse: ReasoningResponse = await response.json();
         
         // Update store with new message (this will trigger UI update)
         await storeSendMessage(content.trim(), user.id);
@@ -512,6 +501,11 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         if (reasoningResponse.reasoning_enabled && reasoningResponse.reasoning_chain) {
           setCurrentReasoningChain(reasoningResponse.reasoning_chain);
           setIsReasoningVisible(true);
+          
+          // Log for debugging
+          console.log('✓ Reasoning chain received:', reasoningResponse.reasoning_chain);
+        } else {
+          console.warn('⚠️ Reasoning was enabled but no chain returned');
         }
         
       } else {

@@ -44,6 +44,7 @@ import { ChatContainer } from '@/components/chat/ChatContainer';
 import { EmotionWidget } from '@/components/emotion/EmotionWidget';
 import { AchievementNotificationManager } from '@/components/gamification/AchievementNotificationManager';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { CompactReasoningToggle } from '@/components/reasoning/ReasoningToggle';
 
 // Hooks
 import { useAuth } from '@/hooks/useAuth';
@@ -387,6 +388,9 @@ export const MainApp: React.FC<MainAppProps> = ({
   // Sidebar states
   const [chatSidebarOpen, setChatSidebarOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  
+  // Deep Thinking state (NEW)
+  const [reasoningEnabled, setReasoningEnabled] = useState(false);
 
   // -------------------------------------------------------------------------
   // Effects
@@ -538,7 +542,7 @@ export const MainApp: React.FC<MainAppProps> = ({
 
         {/* Main Chat Area */}
         <main className="flex-1 flex flex-col min-w-0 relative">
-          {/* Chat Header - Enhanced styling */}
+          {/* Chat Header - Enhanced styling with Deep Thinking Toggle */}
           <header className="h-20 border-b border-white/[0.08] flex items-center justify-between px-8 backdrop-blur-2xl">
             <div className="flex items-center gap-4">
               <Avatar 
@@ -563,7 +567,17 @@ export const MainApp: React.FC<MainAppProps> = ({
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              {/* Deep Thinking Toggle (NEW) */}
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08]">
+                <span className="text-sm font-medium text-white/80">Deep Thinking</span>
+                <CompactReasoningToggle
+                  enabled={reasoningEnabled}
+                  onChange={setReasoningEnabled}
+                  data-testid="main-reasoning-toggle"
+                />
+              </div>
+              
               <button 
                 onClick={() => setToolsPanelOpen(!toolsPanelOpen)}
                 className="p-2.5 hover:bg-white/[0.08] rounded-xl transition-all duration-200"
@@ -574,9 +588,13 @@ export const MainApp: React.FC<MainAppProps> = ({
             </div>
           </header>
 
-          {/* Chat Container - Preserve original component and all functionality */}
+          {/* Chat Container - With Deep Thinking Integration */}
           <div className="flex-1 overflow-hidden" data-testid="chat-container">
-            <ChatContainer />
+            <ChatContainer 
+              enableReasoning={reasoningEnabled}
+              showEmotion={true}
+              enableVoice={true}
+            />
           </div>
 
           {/* WebSocket Status Indicator (Dev mode) - Preserve functionality */}

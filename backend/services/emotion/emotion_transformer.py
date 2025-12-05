@@ -112,10 +112,10 @@ class EmotionTransformerConfig(BaseModel):
         description="Performance profiler configuration"
     )
     
-    # Caching
+    # Caching - FIXED: Use persistent directory instead of /tmp
     model_cache_dir: Path = Field(
-        default=Path("/tmp/masterx_emotion_models"),
-        description="Directory for cached models"
+        default=Path("/app/.cache/emotion_models"),
+        description="Directory for cached models (persistent across restarts)"
     )
     enable_result_caching: bool = Field(
         default=True,
@@ -654,40 +654,65 @@ class EmotionTransformer:
         """
         Load and prepare all models.
         
-        This should be called once at startup.
-        Subsequent predictions will be fast.
+        LAZY LOADING ENABLED: Models are loaded on first use if not initialized here.
+        This method can be called at startup for eager loading, or skipped for lazy loading.
+        
+        Subsequent predictions will be fast after first load (models are cached).
         """
-        logger.info("🚀 Initializing EmotionTransformer...")
+        if self._initialized:
+            logger.info("EmotionTransformer already initialized, skipping...")
+            return
+            
+        logger.info("🚀 Initializing EmotionTransformer (eager loading)...")
         start_time = time.time()
         
-        # Load primary model (RoBERTa)
-        self.primary_model, self.primary_tokenizer = self.cache.load_model(
-            self.config.primary_model_name,
-            use_fp16=self.config.use_mixed_precision
-        )
+        try:
+            # Load primary model (RoBERTa)
+            self.primary_model, self.primary_tokenizer = self.cache.load_model(
+                self.config.primary_model_name,
+                use_fp16=self.config.use_mixed_precision
+            )
+            
+            # Load fallback model (ModernBERT) if enabled
+            if self.config.enable_fallback:
+                try:
+                    self.fallback_model, self.fallback_tokenizer = self.cache.load_model(
+                        self.config.fallback_model_name,
+                        use_fp16=self.config.use_mixed_precision
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️ Failed to load fallback model: {e}. "
+                        "Continuing with primary only."
+                    )
+                    self.config.enable_fallback = False
+            
+            self._initialized = True
+            init_time = time.time() - start_time
+            
+            device_info = DeviceManager.get_device_info()
+            logger.info(
+                f"✅ EmotionTransformer ready! "
+                f"({init_time:.2f}s, {device_info['type'].upper()})"
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize EmotionTransformer: {e}")
+            raise
+    
+    def _ensure_initialized(self) -> None:
+        """
+        Lazy initialization: Load models on first use if not already loaded.
         
-        # Load fallback model (ModernBERT) if enabled
-        if self.config.enable_fallback:
-            try:
-                self.fallback_model, self.fallback_tokenizer = self.cache.load_model(
-                    self.config.fallback_model_name,
-                    use_fp16=self.config.use_mixed_precision
-                )
-            except Exception as e:
-                logger.warning(
-                    f"⚠️ Failed to load fallback model: {e}. "
-                    "Continuing with primary only."
-                )
-                self.config.enable_fallback = False
+        This allows the server to start quickly even if models aren't downloaded yet.
+        First prediction will be slower (model download + load), but subsequent ones will be fast.
+        """
+        if self._initialized:
+            return
         
-        self._initialized = True
-        init_time = time.time() - start_time
+        logger.info("⏳ Lazy loading emotion models (first use)...")
+        logger.info("This may take a minute if models need to be downloaded from HuggingFace...")
         
-        device_info = DeviceManager.get_device_info()
-        logger.info(
-            f"✅ EmotionTransformer ready! "
-            f"({init_time:.2f}s, {device_info['type'].upper()})"
-        )
+        self.initialize()
     
     def predict_emotion(
         self,
@@ -697,20 +722,17 @@ class EmotionTransformer:
         """
         Predict emotion probabilities for single text.
         
+        LAZY LOADING: Models are automatically loaded on first use.
+        
         Args:
             text: Input text to analyze
             use_ensemble: Combine primary + fallback predictions
         
         Returns:
             Dictionary mapping each emotion to probability [0, 1]
-        
-        Raises:
-            RuntimeError: If not initialized
         """
-        if not self._initialized:
-            raise RuntimeError(
-                "EmotionTransformer not initialized. Call initialize() first."
-            )
+        # Lazy initialization on first use
+        self._ensure_initialized()
         
         # Check cache if enabled
         if self.config.enable_result_caching:
@@ -814,6 +836,7 @@ class EmotionTransformer:
         - Performance profiling (EmotionProfiler)
         - GPU memory-aware batching
         - ML-driven throughput optimization
+        - LAZY LOADING: Models loaded automatically on first use
         
         Args:
             texts: List of texts to analyze
@@ -821,10 +844,8 @@ class EmotionTransformer:
         Returns:
             List of emotion probability dictionaries
         """
-        if not self._initialized:
-            raise RuntimeError(
-                "EmotionTransformer not initialized. Call initialize() first."
-            )
+        # Lazy initialization on first use
+        self._ensure_initialized()
         
         results = []
         

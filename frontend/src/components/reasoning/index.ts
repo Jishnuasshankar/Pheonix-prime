@@ -14,7 +14,7 @@
  * ```
  */
 
-export { ReasoningChainDisplay } from './ReasoningChainDisplay';
+export { default as ReasoningChainDisplay } from './ReasoningChainDisplay';
 export {
   ThinkingIndicator,
   CompactThinkingIndicator

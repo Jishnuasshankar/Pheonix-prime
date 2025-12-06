@@ -704,3 +704,143 @@ class ReasoningAnalytics(BaseModel):
     avg_confidence: float = 0.0
     total_sessions: int = 0
 
+
+
+# ============================================================================
+# WEBSOCKET STREAMING MODELS (Phase: Real-Time Streaming)
+# ============================================================================
+
+class StreamErrorCode(str, Enum):
+    """WebSocket streaming error codes"""
+    
+    # Client Errors (4xx)
+    INVALID_MESSAGE_FORMAT = "INVALID_MESSAGE_FORMAT"
+    SESSION_NOT_FOUND = "SESSION_NOT_FOUND"
+    RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    
+    # Server Errors (5xx)
+    AI_PROVIDER_UNAVAILABLE = "AI_PROVIDER_UNAVAILABLE"
+    CONTEXT_RETRIEVAL_FAILED = "CONTEXT_RETRIEVAL_FAILED"
+    EMOTION_DETECTION_FAILED = "EMOTION_DETECTION_FAILED"
+    DATABASE_ERROR = "DATABASE_ERROR"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+    
+    # Generation Errors
+    GENERATION_TIMEOUT = "GENERATION_TIMEOUT"
+    GENERATION_CANCELLED = "GENERATION_CANCELLED"
+    TOKEN_LIMIT_EXCEEDED = "TOKEN_LIMIT_EXCEEDED"
+
+
+class ChatStreamRequest(BaseModel):
+    """Client request to start chat streaming"""
+    message_id: str = Field(..., description="Client-generated message ID")
+    session_id: str = Field(..., description="Session identifier")
+    user_id: str = Field(..., description="User identifier")
+    message: str = Field(..., description="User message", min_length=1)
+    context: Optional[Dict[str, Any]] = Field(default=None, description="Optional context")
+    
+    @field_validator('message_id', 'session_id', 'user_id')
+    @classmethod
+    def validate_uuid(cls, v: str) -> str:
+        """Validate UUID format"""
+        try:
+            uuid.UUID(v)
+            return v
+        except ValueError:
+            raise ValueError(f"Invalid UUID format: {v}")
+
+
+class StopGenerationRequest(BaseModel):
+    """Client request to stop ongoing generation"""
+    message_id: str = Field(..., description="ID of message to cancel")
+    session_id: str = Field(..., description="Session identifier")
+    
+    @field_validator('message_id', 'session_id')
+    @classmethod
+    def validate_uuid(cls, v: str) -> str:
+        """Validate UUID format"""
+        try:
+            uuid.UUID(v)
+            return v
+        except ValueError:
+            raise ValueError(f"Invalid UUID format: {v}")
+
+
+class ThinkingStep(BaseModel):
+    """Reasoning step in thinking phase"""
+    step_number: int = Field(..., ge=1)
+    thinking_mode: Literal["analytical", "creative", "metacognitive"]
+    description: str = Field(..., min_length=1)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StreamChunk(BaseModel):
+    """Base class for streaming chunks"""
+    message_id: str
+    session_id: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class ThinkingChunk(StreamChunk):
+    """Thinking phase chunk"""
+    type: Literal["thinking_chunk"] = "thinking_chunk"
+    reasoning_step: ThinkingStep
+
+
+class ContentChunk(StreamChunk):
+    """Content phase chunk"""
+    type: Literal["content_chunk"] = "content_chunk"
+    content: str
+    chunk_index: int = Field(..., ge=0)
+    is_code: bool = False
+
+
+class StreamStartEvent(StreamChunk):
+    """Stream start notification"""
+    type: Literal["stream_start"] = "stream_start"
+    ai_message_id: str
+    metadata: Dict[str, Any]
+
+
+class StreamCompleteEvent(StreamChunk):
+    """Stream completion notification"""
+    type: Literal["stream_complete"] = "stream_complete"
+    ai_message_id: str
+    full_content: str
+    metadata: Dict[str, Any]
+
+
+class StreamErrorEvent(StreamChunk):
+    """Stream error notification"""
+    type: Literal["stream_error"] = "stream_error"
+    error: Dict[str, Any]
+    partial_content: str = ""
+
+
+class GenerationStoppedEvent(StreamChunk):
+    """Generation stopped notification"""
+    type: Literal["generation_stopped"] = "generation_stopped"
+    ai_message_id: str
+    reason: Literal["user_cancelled", "timeout", "error"]
+    partial_content: str
+    metadata: Dict[str, Any]
+
+
+class EmotionUpdateEvent(StreamChunk):
+    """Real-time emotion update"""
+    type: Literal["emotion_update"] = "emotion_update"
+    emotion: Dict[str, Any]
+
+
+class ContextInfoEvent(StreamChunk):
+    """Context retrieval info"""
+    type: Literal["context_info"] = "context_info"
+    context: Dict[str, Any]
+

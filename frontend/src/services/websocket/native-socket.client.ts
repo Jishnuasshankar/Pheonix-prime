@@ -29,7 +29,18 @@ export type WebSocketEvent =
   | 'user_typing'
   | 'join_session'
   | 'leave_session'
-  | 'message_sent';
+  | 'message_sent'
+  // NEW: Streaming events for real-time chat
+  | 'stream_start'
+  | 'thinking_chunk'
+  | 'content_chunk'
+  | 'context_info'
+  | 'stream_complete'
+  | 'stream_error'
+  | 'generation_stopped'
+  | 'connect'
+  | 'disconnect'
+  | 'pong';
 
 interface WebSocketMessage {
   type: WebSocketEvent;
@@ -312,13 +323,19 @@ class NativeSocketClient {
 
   /**
    * Register event listener
+   * @returns Unsubscribe function to remove the listener
    */
-  on(event: WebSocketEvent, callback: EventCallback): void {
+  on(event: WebSocketEvent, callback: EventCallback): () => void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }
     
     this.eventHandlers.get(event)!.add(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.eventHandlers.get(event)?.delete(callback);
+    };
   }
 
   /**

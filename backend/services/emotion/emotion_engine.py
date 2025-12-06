@@ -1004,6 +1004,10 @@ class EmotionEngine:
             # This is now safe to call - it won't block indefinitely
             self.transformer.initialize()
             
+            # CRITICAL FIX: Set initialized flag BEFORE cache warming to prevent recursion
+            # Cache warming calls analyze_emotion() which would trigger initialize() again
+            self._initialized = True
+            
             # Cache warming with common learning phrases
             if self.cache and self.config.cache_config.enable_cache_warming:
                 common_phrases = [
@@ -1020,7 +1024,6 @@ class EmotionEngine:
                 ]
                 await self.cache.warm_cache(common_phrases, self)
             
-            self._initialized = True
             init_time = time.time() - start_time
             
             cache_info = " with cache warmed" if self.cache else ""

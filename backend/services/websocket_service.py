@@ -1042,6 +1042,34 @@ async def handle_websocket_message(user_id: str, data: Dict[str, Any]):
             'data': {'connections': health_info}
         }, priority=MessagePriority.LOW)
     
+    elif message_type == 'chat_stream':
+        # NEW: Streaming chat request
+        logger.info(f"📨 Received chat_stream request from user {user_id}")
+        
+        # This will be handled by the WebSocket endpoint directly
+        # Just acknowledge receipt here
+        await manager.send_personal_message(user_id, {
+            'type': 'stream_acknowledged',
+            'data': {
+                'message_id': message_data.get('message_id'),
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        }, priority=MessagePriority.HIGH)
+    
+    elif message_type == 'stop_generation':
+        # NEW: Stop ongoing generation
+        message_id = message_data.get('message_id')
+        logger.info(f"🛑 Received stop_generation for message {message_id}")
+        
+        # This will be handled by the WebSocket endpoint directly
+        await manager.send_personal_message(user_id, {
+            'type': 'stop_acknowledged',
+            'data': {
+                'message_id': message_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        }, priority=MessagePriority.HIGH)
+    
     else:
         logger.warning(f"Unknown message type: {message_type}")
 

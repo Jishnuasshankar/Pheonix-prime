@@ -25,13 +25,16 @@ Development Progress
 ---
 
 
-# Dvelopment Progress
+# Development Progress
 
 Phase 1: Backend Models (core/models.py) Completed ✅
 Phase 2: AI Provider Streaming (core/ai_providers.py) Completed ✅
 Phase 3: Engine Streaming (core/engine.py) Completed ✅
-Phase 4: WebSocket Handlers (services/websocket_service.py, server.py) Current Focus ✅
-Phase 5: Frontend Types & Handlers  Not completed 🚫
+Phase 4: WebSocket Handlers (services/websocket_service.py, server.py) Completed ✅
+  - server.py: WebSocket endpoint now handles chat_stream and stop_generation messages
+  - Integrated engine.process_request_stream() for actual streaming
+  - Added proper error handling and message validation
+Phase 5: Frontend Types & Handlers  In Progress 🔄
 Phase 6: Integration Testing Not completed 🚫
 
 ## EXECUTIVE SUMMARY

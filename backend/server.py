@@ -3052,10 +3052,13 @@ async def websocket_endpoint(
     token: str = Query(...)
 ):
     """
-    WebSocket endpoint for real-time communication
+    WebSocket endpoint for real-time bi-directional communication
     
     Features:
-    - Real-time emotion updates
+    - Real-time streaming chat responses (token-by-token)
+    - Emotion updates during processing
+    - Context retrieval notifications
+    - Generation cancellation support
     - Typing indicators
     - Session updates
     - Notifications
@@ -3067,6 +3070,15 @@ async def websocket_endpoint(
         "type": "event_type",
         "data": { ... }
     }
+    
+    Streaming Events:
+    - stream_start: AI processing begins
+    - context_info: Context retrieval complete
+    - emotion_update: Emotion detected
+    - content_chunk: Response content (token-by-token)
+    - stream_complete: Processing complete
+    - stream_error: Error occurred
+    - generation_stopped: User cancelled generation
     """
     # Verify token and extract user_id
     user_id = verify_websocket_token(token)
@@ -3086,18 +3098,151 @@ async def websocket_endpoint(
         while True:
             # Receive message
             data = await websocket.receive_json()
+            message_type = data.get('type')
+            message_data = data.get('data', {})
             
-            # Handle message based on type
-            await handle_websocket_message(user_id, data)
+            # Handle streaming chat request
+            if message_type == 'chat_stream':
+                logger.info(f"📨 Processing chat_stream from user {user_id}")
+                
+                # Extract request data
+                message_id = message_data.get('message_id')
+                session_id = message_data.get('session_id')
+                user_message = message_data.get('message')
+                context = message_data.get('context', {})
+                subject = context.get('subject', 'general')
+                
+                # Validate required fields
+                if not all([message_id, session_id, user_message]):
+                    await websocket.send_json({
+                        'type': 'stream_error',
+                        'data': {
+                            'message_id': message_id or 'unknown',
+                            'session_id': session_id or 'unknown',
+                            'error': {
+                                'code': 'INVALID_MESSAGE_FORMAT',
+                                'message': 'Missing required fields: message_id, session_id, or message',
+                                'recoverable': False
+                            },
+                            'partial_content': '',
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+                    })
+                    continue
+                
+                # Save user message to database
+                try:
+                    user_message_doc = {
+                        "_id": str(uuid.uuid4()),
+                        "session_id": session_id,
+                        "user_id": user_id,
+                        "role": "user",
+                        "content": user_message,
+                        "timestamp": datetime.utcnow(),
+                        "metadata": context
+                    }
+                    await db.messages.insert_one(user_message_doc)
+                    logger.info(f"✅ User message saved: {user_message_doc['_id']}")
+                except Exception as e:
+                    logger.error(f"Failed to save user message: {e}")
+                    await websocket.send_json({
+                        'type': 'stream_error',
+                        'data': {
+                            'message_id': message_id,
+                            'session_id': session_id,
+                            'error': {
+                                'code': 'DATABASE_ERROR',
+                                'message': 'Failed to save message',
+                                'recoverable': True
+                            },
+                            'partial_content': '',
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+                    })
+                    continue
+                
+                # Stream AI response
+                try:
+                    async for event in engine.process_request_stream(
+                        websocket=websocket,
+                        user_id=user_id,
+                        message=user_message,
+                        session_id=session_id,
+                        message_id=message_id,
+                        context=context,
+                        subject=subject
+                    ):
+                        # Send event to client
+                        await websocket.send_json(event)
+                        
+                        # Small delay to prevent overwhelming client
+                        await asyncio.sleep(0.001)
+                        
+                except Exception as e:
+                    logger.error(f"Streaming error for user {user_id}: {e}", exc_info=True)
+                    await websocket.send_json({
+                        'type': 'stream_error',
+                        'data': {
+                            'message_id': message_id,
+                            'session_id': session_id,
+                            'error': {
+                                'code': 'INTERNAL_ERROR',
+                                'message': f'Streaming failed: {str(e)}',
+                                'recoverable': True
+                            },
+                            'partial_content': '',
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+                    })
+            
+            # Handle stop generation request
+            elif message_type == 'stop_generation':
+                message_id = message_data.get('message_id')
+                session_id = message_data.get('session_id')
+                
+                logger.info(f"🛑 Stop generation requested: message_id={message_id}")
+                
+                # Mark as cancelled in engine
+                if hasattr(engine, '_active_streams') and message_id in engine._active_streams:
+                    engine._active_streams[message_id]['cancelled'] = True
+                    logger.info(f"✅ Generation cancelled: message_id={message_id}")
+                    
+                    # Send acknowledgment
+                    await websocket.send_json({
+                        'type': 'stop_acknowledged',
+                        'data': {
+                            'message_id': message_id,
+                            'session_id': session_id,
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+                    })
+                else:
+                    logger.warning(f"⚠️ No active stream found for message_id={message_id}")
+                    await websocket.send_json({
+                        'type': 'stop_acknowledged',
+                        'data': {
+                            'message_id': message_id,
+                            'session_id': session_id,
+                            'already_completed': True,
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+                    })
+            
+            # Handle other message types (typing, session, etc.)
+            else:
+                await handle_websocket_message(user_id, data)
             
     except WebSocketDisconnect:
         manager.disconnect(user_id, connection_id)
         logger.info(f"WebSocket disconnected: user={user_id}")
     
     except Exception as e:
-        logger.error(f"WebSocket error for user {user_id}: {e}")
+        logger.error(f"WebSocket error for user {user_id}: {e}", exc_info=True)
         manager.disconnect(user_id, connection_id)
-        await websocket.close(code=1011, reason="Internal error")
+        try:
+            await websocket.close(code=1011, reason="Internal error")
+        except:
+            pass
 
 
 # Root endpoint

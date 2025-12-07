@@ -72,9 +72,22 @@ class NativeSocketClient {
    */
   connect(): void {
     // CRITICAL: Prevent multiple simultaneous connection attempts
-    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
-      console.log('[WebSocket] Already connected or connecting, skipping');
-      return;
+    if (this.ws) {
+      const state = this.ws.readyState;
+      if (state === WebSocket.CONNECTING) {
+        console.log('[WebSocket] Already connecting, skipping');
+        return;
+      }
+      if (state === WebSocket.OPEN) {
+        console.log('[WebSocket] Already connected, skipping');
+        return;
+      }
+      // CLOSING or CLOSED states - allow reconnect but clean up first
+      if (state === WebSocket.CLOSING) {
+        console.log('[WebSocket] Still closing previous connection, deferring');
+        setTimeout(() => this.connect(), 500);
+        return;
+      }
     }
     
     // CRITICAL: Wait for auth to be ready
@@ -306,11 +319,16 @@ class NativeSocketClient {
    * Disconnect WebSocket
    */
   disconnect(): void {
+    console.log('[WebSocket] Disconnect requested');
     this.isIntentionalClose = true;
     this._stopHeartbeat();
     
     if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
+      const state = this.ws.readyState;
+      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+        console.log('[WebSocket] Closing connection...');
+        this.ws.close(1000, 'Client disconnect');
+      }
       this.ws = null;
     }
   }

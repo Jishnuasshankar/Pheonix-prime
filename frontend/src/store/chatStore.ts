@@ -12,7 +12,14 @@
 import { create } from 'zustand';
 import { chatAPI } from '@/services/api/chat.api';
 import { MessageRole } from '@/types/chat.types';
-import type { Message, ChatRequest, ChatResponse, SuggestedQuestion } from '@/types/chat.types';
+import type { 
+  Message, 
+  ChatRequest, 
+  ChatResponse, 
+  SuggestedQuestion,
+  StreamEvent,
+  StreamingMessage 
+} from '@/types/chat.types';
 import type { EmotionState } from '@/types/emotion.types';
 
 interface ChatState {
@@ -25,8 +32,16 @@ interface ChatState {
   error: string | null;
   suggestedQuestions: SuggestedQuestion[]; // ML-generated follow-up questions
   
+  // NEW: Streaming state
+  isStreaming: boolean;
+  streamingMessageId: string | null;
+  streamingContent: string;
+  cancelStream: (() => void) | null;
+  
   // Actions
   sendMessage: (content: string, userId: string) => Promise<void>;
+  streamMessage: (content: string, userId: string, options?: { subject?: string; enableReasoning?: boolean }) => void; // NEW
+  stopStreaming: () => void; // NEW
   addMessage: (message: Message) => void;
   updateMessageEmotion: (messageId: string, emotion: EmotionState) => void;
   clearMessages: () => void;
@@ -47,6 +62,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionId: null,
   error: null,
   suggestedQuestions: [], // ML-generated questions
+  
+  // NEW: Streaming state
+  isStreaming: false,
+  streamingMessageId: null,
+  streamingContent: '',
+  cancelStream: null,
   
   // Send message action
   sendMessage: async (content: string, userId: string) => {
@@ -125,6 +146,201 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
       throw error;
     }
+  },
+  
+  // NEW: Stream message with real-time token-by-token response
+  streamMessage: (content: string, userId: string, options = {}) => {
+    const { sessionId } = get();
+    
+    // Add user message immediately (optimistic)
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      session_id: sessionId || '',
+      user_id: userId,
+      role: MessageRole.USER,
+      content,
+      timestamp: new Date().toISOString(),
+      emotion_state: null,
+    };
+    
+    // Create placeholder for streaming AI message
+    const aiMessageId = `ai-${Date.now()}`;
+    
+    set((state) => ({
+      messages: [...state.messages, userMessage],
+      isStreaming: true,
+      streamingMessageId: aiMessageId,
+      streamingContent: '',
+      isTyping: true,
+      error: null,
+      suggestedQuestions: [], // Clear previous questions
+    }));
+    
+    try {
+      // Start streaming via WebSocket
+      const cancel = chatAPI.streamMessage(
+        {
+          message: content,
+          user_id: userId,
+          session_id: sessionId || undefined,
+          context: {
+            subject: options.subject,
+            enable_reasoning: options.enableReasoning,
+          },
+        },
+        (event: StreamEvent) => {
+          // Handle each streaming event
+          const state = get();
+          
+          switch (event.type) {
+            case 'stream_start':
+              // Update session ID if new session
+              if (event.data.session_id && !state.sessionId) {
+                set({ sessionId: event.data.session_id });
+              }
+              break;
+            
+            case 'content_chunk':
+              // Append content chunk to streaming message
+              set((prevState) => ({
+                streamingContent: prevState.streamingContent + event.data.content,
+              }));
+              break;
+            
+            case 'emotion_update':
+              // Update current emotion
+              set({
+                currentEmotion: event.data.emotion,
+              });
+              break;
+            
+            case 'stream_complete':
+              // Finalize streaming message
+              const completedMessage: Message = {
+                id: event.data.ai_message_id,
+                session_id: event.data.session_id,
+                user_id: 'assistant',
+                role: MessageRole.ASSISTANT,
+                content: event.data.full_content,
+                timestamp: event.data.timestamp,
+                emotion_state: state.currentEmotion,
+                provider_used: event.data.metadata.provider_used,
+                response_time_ms: event.data.metadata.response_time_ms,
+                tokens_used: event.data.metadata.tokens_used,
+                cost: event.data.metadata.cost,
+              };
+              
+              set((prevState) => ({
+                messages: [...prevState.messages, completedMessage],
+                isStreaming: false,
+                streamingMessageId: null,
+                streamingContent: '',
+                isTyping: false,
+                cancelStream: null,
+              }));
+              break;
+            
+            case 'stream_error':
+              // Handle streaming error
+              const errorMessage = event.data.error.message || 'Streaming failed';
+              
+              // If partial content exists, add it as a message
+              if (event.data.partial_content) {
+                const partialMessage: Message = {
+                  id: `ai-partial-${Date.now()}`,
+                  session_id: event.data.session_id,
+                  user_id: 'assistant',
+                  role: MessageRole.ASSISTANT,
+                  content: event.data.partial_content + '\n\n[Generation incomplete due to error]',
+                  timestamp: event.data.timestamp,
+                  emotion_state: state.currentEmotion,
+                };
+                
+                set((prevState) => ({
+                  messages: [...prevState.messages, partialMessage],
+                  isStreaming: false,
+                  streamingMessageId: null,
+                  streamingContent: '',
+                  isTyping: false,
+                  error: errorMessage,
+                  cancelStream: null,
+                }));
+              } else {
+                set({
+                  isStreaming: false,
+                  streamingMessageId: null,
+                  streamingContent: '',
+                  isTyping: false,
+                  error: errorMessage,
+                  cancelStream: null,
+                });
+              }
+              break;
+            
+            case 'generation_stopped':
+              // User cancelled or timeout
+              if (event.data.partial_content) {
+                const stoppedMessage: Message = {
+                  id: event.data.ai_message_id,
+                  session_id: event.data.session_id,
+                  user_id: 'assistant',
+                  role: MessageRole.ASSISTANT,
+                  content: event.data.partial_content + '\n\n[Generation stopped]',
+                  timestamp: event.data.timestamp,
+                  emotion_state: state.currentEmotion,
+                };
+                
+                set((prevState) => ({
+                  messages: [...prevState.messages, stoppedMessage],
+                  isStreaming: false,
+                  streamingMessageId: null,
+                  streamingContent: '',
+                  isTyping: false,
+                  cancelStream: null,
+                }));
+              } else {
+                set({
+                  isStreaming: false,
+                  streamingMessageId: null,
+                  streamingContent: '',
+                  isTyping: false,
+                  cancelStream: null,
+                });
+              }
+              break;
+          }
+        }
+      );
+      
+      // Store cancel function
+      set({ cancelStream: cancel });
+      
+    } catch (error: any) {
+      // Handle error
+      set((state) => ({
+        messages: state.messages.filter((msg) => msg.id !== userMessage.id),
+        isStreaming: false,
+        streamingMessageId: null,
+        streamingContent: '',
+        isTyping: false,
+        error: error.message || 'Failed to start streaming',
+        cancelStream: null,
+      }));
+    }
+  },
+  
+  // NEW: Stop ongoing streaming
+  stopStreaming: () => {
+    const { cancelStream } = get();
+    if (cancelStream) {
+      cancelStream();
+    }
+    set({
+      isStreaming: false,
+      streamingMessageId: null,
+      streamingContent: '',
+      cancelStream: null,
+    });
   },
   
   // Add message (for WebSocket updates)

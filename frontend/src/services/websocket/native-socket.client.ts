@@ -64,9 +64,31 @@ class NativeSocketClient {
 
   /**
    * Initialize WebSocket connection
+   * 
+   * CRITICAL FIX: Only connect if:
+   * 1. Not already connected/connecting
+   * 2. Auth token is available
+   * 3. Auth check is complete
    */
   connect(): void {
-    const token = useAuthStore.getState().accessToken;
+    // CRITICAL: Prevent multiple simultaneous connection attempts
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      console.log('[WebSocket] Already connected or connecting, skipping');
+      return;
+    }
+    
+    // CRITICAL: Wait for auth to be ready
+    const authState = useAuthStore.getState();
+    const token = authState.accessToken;
+    const isAuthLoading = authState.isAuthLoading;
+    
+    // Don't connect if auth is still checking
+    if (isAuthLoading) {
+      console.log('[WebSocket] Auth still loading, deferring connection');
+      // Retry after auth is ready
+      setTimeout(() => this.connect(), 100);
+      return;
+    }
     
     if (!token) {
       console.warn('[WebSocket] No token available for WebSocket connection');

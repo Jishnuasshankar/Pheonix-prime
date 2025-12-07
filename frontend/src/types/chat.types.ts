@@ -200,6 +200,224 @@ export interface MessageGroup {
 }
 
 // ============================================================================
+// WEBSOCKET STREAMING TYPES
+// ============================================================================
+
+/**
+ * Client → Server: Request to start streaming chat
+ */
+export interface ChatStreamRequest {
+  message_id: string;
+  session_id: string;
+  user_id: string;
+  message: string;
+  context?: {
+    subject?: string;
+    enable_rag?: boolean;
+    enable_reasoning?: boolean;
+  };
+}
+
+/**
+ * Client → Server: Stop ongoing generation
+ */
+export interface StopGenerationRequest {
+  message_id: string;
+  session_id: string;
+}
+
+/**
+ * Server → Client: Stream start event
+ */
+export interface StreamStartEvent {
+  type: 'stream_start';
+  data: {
+    message_id: string;
+    session_id: string;
+    ai_message_id: string;
+    timestamp: string;
+    metadata: {
+      provider: string;
+      category: string;
+      estimated_tokens?: number;
+    };
+  };
+}
+
+/**
+ * Server → Client: Thinking chunk (reasoning phase)
+ */
+export interface ThinkingChunkEvent {
+  type: 'thinking_chunk';
+  data: {
+    message_id: string;
+    session_id: string;
+    reasoning_step: {
+      step_number: number;
+      thinking_mode: 'analytical' | 'creative' | 'metacognitive';
+      description: string;
+      confidence: number;
+      timestamp: string;
+    };
+  };
+}
+
+/**
+ * Server → Client: Content chunk (response text)
+ */
+export interface ContentChunkEvent {
+  type: 'content_chunk';
+  data: {
+    message_id: string;
+    session_id: string;
+    content: string;
+    chunk_index: number;
+    is_code: boolean;
+    timestamp: string;
+  };
+}
+
+/**
+ * Server → Client: Emotion update
+ */
+export interface EmotionUpdateEvent {
+  type: 'emotion_update';
+  data: {
+    message_id: string;
+    session_id: string;
+    emotion: EmotionState;
+    timestamp: string;
+  };
+}
+
+/**
+ * Server → Client: Context info
+ */
+export interface ContextInfoEvent {
+  type: 'context_info';
+  data: {
+    message_id: string;
+    session_id: string;
+    context: {
+      recent_messages_used: number;
+      relevant_messages_used: number;
+      semantic_search_enabled: boolean;
+      rag_enabled: boolean;
+      rag_sources?: number;
+    };
+    timestamp: string;
+  };
+}
+
+/**
+ * Server → Client: Stream complete
+ */
+export interface StreamCompleteEvent {
+  type: 'stream_complete';
+  data: {
+    message_id: string;
+    session_id: string;
+    ai_message_id: string;
+    full_content: string;
+    metadata: {
+      provider_used: string;
+      response_time_ms: number;
+      tokens_used: number;
+      cost: number;
+      ability_updated?: {
+        subject: string;
+        new_ability: number;
+        confidence: number;
+      };
+    };
+    timestamp: string;
+  };
+}
+
+/**
+ * Server → Client: Stream error
+ */
+export interface StreamErrorEvent {
+  type: 'stream_error';
+  data: {
+    message_id: string;
+    session_id: string;
+    error: {
+      code: string;
+      message: string;
+      details?: string;
+      recoverable: boolean;
+    };
+    partial_content: string;
+    timestamp: string;
+  };
+}
+
+/**
+ * Server → Client: Generation stopped (user cancelled)
+ */
+export interface GenerationStoppedEvent {
+  type: 'generation_stopped';
+  data: {
+    message_id: string;
+    session_id: string;
+    ai_message_id: string;
+    reason: 'user_cancelled' | 'timeout' | 'error';
+    partial_content: string;
+    metadata: {
+      tokens_used: number;
+      cost: number;
+      stopped_at_ms: number;
+    };
+    timestamp: string;
+  };
+}
+
+/**
+ * Union type of all streaming events
+ */
+export type StreamEvent = 
+  | StreamStartEvent
+  | ThinkingChunkEvent
+  | ContentChunkEvent
+  | EmotionUpdateEvent
+  | ContextInfoEvent
+  | StreamCompleteEvent
+  | StreamErrorEvent
+  | GenerationStoppedEvent;
+
+/**
+ * Streaming state for active chat streaming
+ */
+export interface StreamingState {
+  isStreaming: boolean;
+  currentMessageId: string | null;
+  aiMessageId: string | null;
+  accumulatedContent: string;
+  thinkingSteps: ThinkingChunkEvent['data']['reasoning_step'][];
+  currentEmotion: EmotionState | null;
+  error: {
+    code: string;
+    message: string;
+    recoverable: boolean;
+  } | null;
+}
+
+/**
+ * Streaming message state
+ */
+export interface StreamingMessage extends Message {
+  isStreaming: boolean;
+  partialContent: string;
+  streamMetadata?: {
+    provider?: string;
+    category?: string;
+    contextInfo?: ContextInfoEvent['data']['context'];
+    emotionDetected?: EmotionState;
+  };
+}
+
+// ============================================================================
 // TYPE GUARDS
 // ============================================================================
 

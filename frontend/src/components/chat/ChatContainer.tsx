@@ -658,8 +658,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       // WebSocket notification (session event)
       if ((storeSessionId || activeSessionId) && isConnected) {
         try {
-          sendEvent({
-            type: 'message_sent',
+          sendEvent('message_sent', {
             sessionId: storeSessionId || activeSessionId,
             userId: user.id
           });

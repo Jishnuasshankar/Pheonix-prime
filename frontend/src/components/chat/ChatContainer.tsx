@@ -37,6 +37,8 @@ import { cn } from '@/utils/cn';
 import { toast } from '@/components/ui/Toast';
 import { AlertCircle, Wifi, WifiOff, Sparkles, Brain, Zap } from 'lucide-react';
 import type { ReasoningChain, ThinkingMode, ReasoningResponse } from '@/types/reasoning.types';
+import { chatAPI } from '@/services/api/chat.api';
+import type { StreamEvent, StreamingState } from '@/types/chat.types';
 
 // Lazy load reasoning display component (improves initial load)
 const ReasoningChainDisplay = lazy(() =>
@@ -370,9 +372,21 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const [currentReasoningChain, setCurrentReasoningChain] = useState<ReasoningChain | null>(null);
   const [isReasoningVisible, setIsReasoningVisible] = useState(false);
   
+  // NEW: Streaming state for WebSocket streaming
+  const [streamingState, setStreamingState] = useState<StreamingState>({
+    isStreaming: false,
+    currentMessageId: null,
+    aiMessageId: null,
+    accumulatedContent: '',
+    thinkingSteps: [],
+    currentEmotion: null,
+    error: null
+  });
+  
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
+  const cancelStreamRef = useRef<(() => void) | null>(null);
   
   // Navigation
   const navigate = useNavigate();
@@ -468,57 +482,185 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [messages.length, scrollToBottom]);
   
   // ============================================================================
-  // MESSAGE SENDING WITH REASONING SUPPORT (ENHANCED)
+  // STREAMING EVENT HANDLER (NEW)
+  // ============================================================================
+  
+  const handleStreamEvent = useCallback((event: StreamEvent) => {
+    switch (event.type) {
+      case 'stream_start':
+        setStreamingState(prev => ({
+          ...prev,
+          currentMessageId: event.data.message_id,
+          aiMessageId: event.data.ai_message_id
+        }));
+        console.log('✓ Stream started:', event.data);
+        break;
+      
+      case 'thinking_chunk':
+        if (enableReasoning) {
+          setStreamingState(prev => ({
+            ...prev,
+            thinkingSteps: [...prev.thinkingSteps, event.data.reasoning_step]
+          }));
+        }
+        break;
+      
+      case 'content_chunk':
+        setStreamingState(prev => ({
+          ...prev,
+          accumulatedContent: prev.accumulatedContent + event.data.content
+        }));
+        // Auto-scroll as content arrives
+        scrollToBottom();
+        break;
+      
+      case 'emotion_update':
+        if (showEmotion) {
+          setStreamingState(prev => ({
+            ...prev,
+            currentEmotion: event.data.emotion
+          }));
+        }
+        break;
+      
+      case 'context_info':
+        console.log('✓ Context info:', event.data.context);
+        break;
+      
+      case 'stream_complete':
+        // Finalize the streaming message
+        console.log('✓ Stream complete:', {
+          content: event.data.full_content,
+          metadata: event.data.metadata
+        });
+        
+        // Reset streaming state
+        setStreamingState({
+          isStreaming: false,
+          currentMessageId: null,
+          aiMessageId: null,
+          accumulatedContent: '',
+          thinkingSteps: [],
+          currentEmotion: null,
+          error: null
+        });
+        
+        cancelStreamRef.current = null;
+        setTyping(false);
+        
+        // Show success toast
+        toast.success('Response complete', {
+          description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
+        });
+        break;
+      
+      case 'stream_error':
+        console.error('✗ Stream error:', event.data.error);
+        
+        setStreamingState(prev => ({
+          ...prev,
+          isStreaming: false,
+          error: event.data.error
+        }));
+        
+        setTyping(false);
+        cancelStreamRef.current = null;
+        
+        toast.error('Generation failed', {
+          description: event.data.error.message
+        });
+        break;
+      
+      case 'generation_stopped':
+        console.log('✓ Generation stopped:', event.data.reason);
+        
+        setStreamingState({
+          isStreaming: false,
+          currentMessageId: null,
+          aiMessageId: null,
+          accumulatedContent: '',
+          thinkingSteps: [],
+          currentEmotion: null,
+          error: null
+        });
+        
+        setTyping(false);
+        cancelStreamRef.current = null;
+        
+        toast.info('Generation stopped');
+        break;
+    }
+  }, [enableReasoning, showEmotion, scrollToBottom, setTyping]);
+  
+  // ============================================================================
+  // MESSAGE SENDING WITH STREAMING SUPPORT (ENHANCED)
   // ============================================================================
   
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !user) return;
     
+    // Prevent sending if already streaming
+    if (streamingState.isStreaming) {
+      console.warn('⚠️ Already streaming, ignoring new message');
+      return;
+    }
+    
     try {
-      // Clear previous reasoning chain
+      // Clear previous state
       setCurrentReasoningChain(null);
       setIsReasoningVisible(false);
+      setStreamingState({
+        isStreaming: true,
+        currentMessageId: null,
+        aiMessageId: null,
+        accumulatedContent: '',
+        thinkingSteps: [],
+        currentEmotion: null,
+        error: null
+      });
       
-      // Determine which endpoint to use
-      if (enableReasoning) {
-        // FIX: Use reasoning API client instead of raw fetch
-        const { chatWithReasoning } = await import('@/services/api/reasoning');
-        
-        const reasoningResponse = await chatWithReasoning({
+      // Add user message optimistically
+      const tempUserId = `temp-${Date.now()}`;
+      const userMessage = {
+        id: tempUserId,
+        role: 'user' as const,
+        content: content.trim(),
+        timestamp: new Date().toISOString(),
+        session_id: storeSessionId || activeSessionId
+      };
+      
+      // Add to chat store immediately
+      // Note: We'll need to check if chatStore has addMessage method
+      console.log('✓ User message:', userMessage);
+      
+      setTyping(true);
+      
+      // Start WebSocket streaming
+      console.log('🚀 Starting stream for session:', storeSessionId || activeSessionId);
+      
+      const cancel = chatAPI.streamMessage(
+        {
           user_id: user.id,
-          session_id: storeSessionId || undefined,
           message: content.trim(),
-          enable_reasoning: true,
-          thinking_mode: undefined, // Let engine auto-select
-          max_reasoning_depth: 5,
-          context: {}
-        });
-        
-        // Update store with new message (this will trigger UI update)
-        await storeSendMessage(content.trim(), user.id);
-        
-        // If reasoning chain is available, display it
-        if (reasoningResponse.reasoning_enabled && reasoningResponse.reasoning_chain) {
-          setCurrentReasoningChain(reasoningResponse.reasoning_chain);
-          setIsReasoningVisible(true);
-          
-          // Log for debugging
-          console.log('✓ Reasoning chain received:', reasoningResponse.reasoning_chain);
-        } else {
-          console.warn('⚠️ Reasoning was enabled but no chain returned');
-        }
-        
-      } else {
-        // Use standard chat endpoint (existing flow)
-        await storeSendMessage(content.trim(), user.id);
-      }
+          session_id: storeSessionId || activeSessionId || '',
+          context: {
+            subject: initialTopic || 'general',
+            enable_reasoning: enableReasoning,
+            enable_rag: false
+          }
+        },
+        handleStreamEvent
+      );
       
-      // WebSocket notification
-      if (storeSessionId && isConnected) {
+      // Store cancel function
+      cancelStreamRef.current = cancel;
+      
+      // WebSocket notification (session event)
+      if ((storeSessionId || activeSessionId) && isConnected) {
         try {
           sendEvent({
             type: 'message_sent',
-            sessionId: storeSessionId,
+            sessionId: storeSessionId || activeSessionId,
             userId: user.id
           });
         } catch (wsErr) {
@@ -528,6 +670,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       
     } catch (err: unknown) {
       console.error('Failed to send message:', err);
+      
+      setStreamingState(prev => ({
+        ...prev,
+        isStreaming: false,
+        error: {
+          code: 'SEND_FAILED',
+          message: 'Failed to start streaming',
+          recoverable: true
+        }
+      }));
+      
+      setTyping(false);
+      cancelStreamRef.current = null;
       
       const error = err as { code?: string; response?: { status?: number; data?: { detail?: string } }; message?: string };
       
@@ -559,7 +714,26 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         description: errorMessage
       });
     }
-  }, [user, enableReasoning, storeSendMessage, storeSessionId, isConnected, sendEvent]);
+  }, [user, streamingState.isStreaming, storeSessionId, activeSessionId, initialTopic, enableReasoning, isConnected, sendEvent, setTyping, handleStreamEvent]);
+  
+  // ============================================================================
+  // STOP GENERATION HANDLER (NEW)
+  // ============================================================================
+  
+  const handleStopGeneration = useCallback(() => {
+    if (cancelStreamRef.current) {
+      console.log('🛑 Stopping generation...');
+      cancelStreamRef.current();
+      
+      setStreamingState(prev => ({
+        ...prev,
+        isStreaming: false
+      }));
+      
+      setTyping(false);
+      toast.info('Stopping generation...');
+    }
+  }, [setTyping]);
   
   // ============================================================================
   // SUGGESTED QUESTIONS HANDLER
@@ -699,9 +873,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <div className="flex-1">
               <MessageInput
                 onSend={handleSendMessage}
-                disabled={isLoading}
+                disabled={isLoading || streamingState.isStreaming}
+                showStopButton={streamingState.isStreaming}
+                onStop={handleStopGeneration}
                 placeholder={
-                  isLoading
+                  streamingState.isStreaming
+                    ? 'Streaming response...'
+                    : isLoading
                     ? enableReasoning 
                       ? 'AI is thinking deeply...'
                       : 'AI is thinking...'

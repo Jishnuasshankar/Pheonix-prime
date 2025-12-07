@@ -25,7 +25,7 @@
  */
 
 import React, { useRef, useState, useCallback, useLayoutEffect } from 'react';
-import { Send, Smile, Paperclip, Loader2, X, Plus, Image as ImageIcon, StopCircle } from 'lucide-react';
+import { Send, Smile, Paperclip, Loader2, X, Plus, Image as ImageIcon } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { cn } from '@/utils/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -73,17 +73,6 @@ export interface MessageInputProps {
    * @default false
    */
   enableAttachments?: boolean;
-  
-  /**
-   * Show stop button instead of send (for streaming)
-   * @default false
-   */
-  showStopButton?: boolean;
-  
-  /**
-   * Callback when stop button is clicked (cancels streaming)
-   */
-  onStop?: () => void;
   
   /**
    * Additional CSS classes

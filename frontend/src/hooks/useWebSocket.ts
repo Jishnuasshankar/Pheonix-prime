@@ -58,14 +58,22 @@ export interface UseWebSocketReturn {
   disconnect: () => void;
 }
 
-// Singleton connection manager
+// Singleton connection manager with debounced cleanup
 let connectionInitialized = false;
 let connectionRefCount = 0;
+let disconnectTimeout: NodeJS.Timeout | null = null;
 
 export const useWebSocket = (): UseWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    // Cancel any pending disconnect if component remounts quickly
+    if (disconnectTimeout) {
+      console.log('[useWebSocket] Canceling pending disconnect (component remounted)');
+      clearTimeout(disconnectTimeout);
+      disconnectTimeout = null;
+    }
+    
     // Increment ref count (number of components using WebSocket)
     connectionRefCount++;
     console.log(`[useWebSocket] Component mounted (ref count: ${connectionRefCount})`);
@@ -102,11 +110,21 @@ export const useWebSocket = (): UseWebSocketReturn => {
       console.log(`[useWebSocket] Component unmounted (ref count: ${connectionRefCount})`);
       
       // Only disconnect when NO components are using it
+      // CRITICAL FIX: Add 2-second delay to handle React Strict Mode remounting
       if (connectionRefCount === 0) {
-        console.log('[useWebSocket] No more components using WebSocket, disconnecting');
-        cleanupSocketHandlers();
-        nativeSocketClient.disconnect();
-        connectionInitialized = false;
+        console.log('[useWebSocket] Scheduling disconnect in 2s (handle remounting)');
+        disconnectTimeout = setTimeout(() => {
+          // Double-check ref count hasn't changed during delay
+          if (connectionRefCount === 0) {
+            console.log('[useWebSocket] No more components using WebSocket, disconnecting');
+            cleanupSocketHandlers();
+            nativeSocketClient.disconnect();
+            connectionInitialized = false;
+          } else {
+            console.log('[useWebSocket] Component remounted during delay, keeping connection');
+          }
+          disconnectTimeout = null;
+        }, 2000);
       }
     };
   }, []);

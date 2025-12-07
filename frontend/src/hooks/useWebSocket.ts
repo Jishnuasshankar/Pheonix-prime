@@ -58,32 +58,15 @@ export interface UseWebSocketReturn {
   disconnect: () => void;
 }
 
-// Singleton connection manager
-let connectionInitialized = false;
-let connectionRefCount = 0;
-
 export const useWebSocket = (): UseWebSocketReturn => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    // Increment ref count (number of components using WebSocket)
-    connectionRefCount++;
-    console.log(`[useWebSocket] Component mounted (ref count: ${connectionRefCount})`);
+    // Connect on mount
+    nativeSocketClient.connect();
     
-    // CRITICAL FIX: Only initialize once globally
-    // Prevent multiple components from creating multiple connections
-    if (!connectionInitialized) {
-      console.log('[useWebSocket] Initializing WebSocket connection (first mount)');
-      connectionInitialized = true;
-      
-      // Connect on mount (will check if already connected internally)
-      nativeSocketClient.connect();
-      
-      // Initialize event handlers
-      initializeSocketHandlers();
-    } else {
-      console.log('[useWebSocket] Using existing WebSocket connection');
-    }
+    // Initialize event handlers
+    initializeSocketHandlers();
 
     // Listen to connection state
     const checkConnection = () => {
@@ -96,18 +79,8 @@ export const useWebSocket = (): UseWebSocketReturn => {
     // Cleanup on unmount
     return () => {
       clearInterval(interval);
-      
-      // Decrement ref count
-      connectionRefCount--;
-      console.log(`[useWebSocket] Component unmounted (ref count: ${connectionRefCount})`);
-      
-      // Only disconnect when NO components are using it
-      if (connectionRefCount === 0) {
-        console.log('[useWebSocket] No more components using WebSocket, disconnecting');
-        cleanupSocketHandlers();
-        nativeSocketClient.disconnect();
-        connectionInitialized = false;
-      }
+      cleanupSocketHandlers();
+      nativeSocketClient.disconnect();
     };
   }, []);
 

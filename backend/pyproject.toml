@@ -29,7 +29,6 @@ dependencies = [
     "google-generativeai>=0.8.0",
     "groq>=0.31.0",
     "litellm>=1.77.0",
-    "emergentintegrations>=0.1.0",
     
     # ML/AI Libraries
     "torch>=2.8.0",

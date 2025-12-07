@@ -19,15 +19,8 @@
  * @module services/api/chat.api
  */
 
-import { v4 as uuidv4 } from 'uuid';
 import apiClient from './client';
-import nativeSocketClient from '../websocket/native-socket.client';
-import type { 
-  ChatRequest, 
-  ChatResponse, 
-  ChatHistoryResponse,
-  StreamEvent 
-} from '../../types/chat.types';
+import type { ChatRequest, ChatResponse, ChatHistoryResponse } from '../../types/chat.types';
 
 /**
  * Chat API endpoints
@@ -93,110 +86,6 @@ export const chatAPI = {
       }
     );
     return data;
-  },
-
-  /**
-   * Send a streaming chat message via WebSocket
-   * 
-   * Triggers real-time streaming response with:
-   * - Thinking phase (reasoning steps)
-   * - Content phase (token-by-token response)
-   * - Emotion updates
-   * - Context information
-   * - Cancellation support
-   * 
-   * This provides a ChatGPT-like streaming experience where tokens
-   * appear in real-time as the AI generates them.
-   * 
-   * @param request - Chat request (same as sendMessage)
-   * @param onEvent - Callback for each streaming event
-   * @returns Cancellation function to stop generation
-   * 
-   * @example
-   * ```typescript
-   * const cancel = chatAPI.streamMessage(
-   *   {
-   *     user_id: 'user-123',
-   *     message: 'Explain quantum computing',
-   *     session_id: 'session-abc',
-   *     context: { subject: 'physics' }
-   *   },
-   *   (event) => {
-   *     if (event.type === 'content_chunk') {
-   *       console.log('Chunk:', event.data.content);
-   *     } else if (event.type === 'stream_complete') {
-   *       console.log('Complete:', event.data.full_content);
-   *     }
-   *   }
-   * );
-   * 
-   * // Cancel if needed
-   * cancel();
-   * ```
-   */
-  streamMessage: (
-    request: ChatRequest,
-    onEvent: (event: StreamEvent) => void
-  ): (() => void) => {
-    // Generate client-side message ID for tracking
-    const messageId = uuidv4();
-    const sessionId = request.session_id || uuidv4();
-    
-    // Build WebSocket message
-    const wsMessage = {
-      type: 'chat_stream',
-      data: {
-        message_id: messageId,
-        session_id: sessionId,
-        user_id: request.user_id,
-        message: request.message,
-        context: request.context || {}
-      }
-    };
-    
-    // Subscribe to ALL streaming events for this message
-    const eventTypes: Array<WebSocketEvent> = [
-      'stream_start',
-      'thinking_chunk',
-      'content_chunk',
-      'emotion_update',
-      'context_info',
-      'stream_complete',
-      'stream_error',
-      'generation_stopped'
-    ];
-    
-    const unsubscribers: Array<() => void> = [];
-    
-    // Register handlers for each event type
-    eventTypes.forEach(eventType => {
-      const unsubscribe = nativeSocketClient.on(eventType, (data: any) => {
-        // Filter by message_id to ensure we only handle events for this specific message
-        if (data.message_id === messageId) {
-          onEvent({
-            type: eventType,
-            data
-          } as StreamEvent);
-        }
-      });
-      
-      unsubscribers.push(unsubscribe);
-    });
-    
-    // Send chat_stream request
-    nativeSocketClient.send('chat_stream' as any, wsMessage.data);
-    
-    // Return cancellation function
-    return () => {
-      // Unsubscribe from all events
-      unsubscribers.forEach(unsub => unsub());
-      
-      // Send stop_generation message
-      nativeSocketClient.send('stop_generation' as any, {
-        message_id: messageId,
-        session_id: sessionId
-      });
-    };
   },
 
   /**

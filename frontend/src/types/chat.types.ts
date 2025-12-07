@@ -387,23 +387,6 @@ export type StreamEvent =
   | GenerationStoppedEvent;
 
 /**
- * Streaming state for active chat streaming
- */
-export interface StreamingState {
-  isStreaming: boolean;
-  currentMessageId: string | null;
-  aiMessageId: string | null;
-  accumulatedContent: string;
-  thinkingSteps: ThinkingChunkEvent['data']['reasoning_step'][];
-  currentEmotion: EmotionState | null;
-  error: {
-    code: string;
-    message: string;
-    recoverable: boolean;
-  } | null;
-}
-
-/**
  * Streaming message state
  */
 export interface StreamingMessage extends Message {

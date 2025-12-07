@@ -29,18 +29,7 @@ export type WebSocketEvent =
   | 'user_typing'
   | 'join_session'
   | 'leave_session'
-  | 'message_sent'
-  // NEW: Streaming events for real-time chat
-  | 'stream_start'
-  | 'thinking_chunk'
-  | 'content_chunk'
-  | 'context_info'
-  | 'stream_complete'
-  | 'stream_error'
-  | 'generation_stopped'
-  | 'connect'
-  | 'disconnect'
-  | 'pong';
+  | 'message_sent';
 
 interface WebSocketMessage {
   type: WebSocketEvent;
@@ -64,31 +53,9 @@ class NativeSocketClient {
 
   /**
    * Initialize WebSocket connection
-   * 
-   * CRITICAL FIX: Only connect if:
-   * 1. Not already connected/connecting
-   * 2. Auth token is available
-   * 3. Auth check is complete
    */
   connect(): void {
-    // CRITICAL: Prevent multiple simultaneous connection attempts
-    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
-      console.log('[WebSocket] Already connected or connecting, skipping');
-      return;
-    }
-    
-    // CRITICAL: Wait for auth to be ready
-    const authState = useAuthStore.getState();
-    const token = authState.accessToken;
-    const isAuthLoading = authState.isAuthLoading;
-    
-    // Don't connect if auth is still checking
-    if (isAuthLoading) {
-      console.log('[WebSocket] Auth still loading, deferring connection');
-      // Retry after auth is ready
-      setTimeout(() => this.connect(), 100);
-      return;
-    }
+    const token = useAuthStore.getState().accessToken;
     
     if (!token) {
       console.warn('[WebSocket] No token available for WebSocket connection');
@@ -345,19 +312,13 @@ class NativeSocketClient {
 
   /**
    * Register event listener
-   * @returns Unsubscribe function to remove the listener
    */
-  on(event: WebSocketEvent, callback: EventCallback): () => void {
+  on(event: WebSocketEvent, callback: EventCallback): void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }
     
     this.eventHandlers.get(event)!.add(callback);
-    
-    // Return unsubscribe function
-    return () => {
-      this.eventHandlers.get(event)?.delete(callback);
-    };
   }
 
   /**

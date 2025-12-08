@@ -500,6 +500,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             accumulatedContent: '', // Reset content
             error: null
           }));
+          
+          // Update session ID if it's a new session
+          if (event.data.session_id && !storeSessionId) {
+            useChatStore.setState({ sessionId: event.data.session_id });
+            console.log('✅ Session ID set:', event.data.session_id);
+          }
+          
           setTyping(true);
           break;
         
@@ -514,10 +521,29 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           break;
         
         case 'content_chunk':
-          // CRITICAL: Accumulate content chunk by chunk
+          // CRITICAL: Accumulate content chunk by chunk and update AI message in real-time
           setStreamingState(prev => {
             const newContent = prev.accumulatedContent + event.data.content;
             console.log('📝 Content chunk received (total:', newContent.length, 'chars)');
+            
+            // CRITICAL FIX: Update the AI message content in messages array
+            if (prev.aiMessageId) {
+              const chatStore = useChatStore.getState();
+              const messages = chatStore.messages;
+              const messageIndex = messages.findIndex(m => m.id === prev.aiMessageId);
+              
+              if (messageIndex !== -1) {
+                const updatedMessages = [...messages];
+                updatedMessages[messageIndex] = {
+                  ...updatedMessages[messageIndex],
+                  content: newContent
+                };
+                
+                // Update messages in store
+                useChatStore.setState({ messages: updatedMessages });
+              }
+            }
+            
             return {
               ...prev,
               accumulatedContent: newContent
@@ -549,6 +575,31 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             metadata: event.data.metadata
           });
           
+          // CRITICAL FIX: Finalize the AI message with all metadata
+          if (streamingState.aiMessageId) {
+            const chatStore = useChatStore.getState();
+            const messages = chatStore.messages;
+            const messageIndex = messages.findIndex(m => m.id === finalState.aiMessageId);
+            
+            if (messageIndex !== -1) {
+              const updatedMessages = [...messages];
+              updatedMessages[messageIndex] = {
+                ...updatedMessages[messageIndex],
+                id: event.data.ai_message_id, // Use real backend message ID
+                content: event.data.full_content,
+                emotion_state: streamingState.currentEmotion,
+                provider_used: event.data.metadata.provider_used,
+                response_time_ms: event.data.metadata.response_time_ms,
+                tokens_used: event.data.metadata.tokens_used,
+                cost: event.data.metadata.cost
+              };
+              
+              // Update messages in store
+              useChatStore.setState({ messages: updatedMessages });
+              console.log('✅ AI message finalized with metadata:', event.data.ai_message_id);
+            }
+          }
+          
           // Reset streaming state
           setStreamingState({
             isStreaming: false,
@@ -567,20 +618,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           toast.success('Response complete', {
             description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
           });
-          
-          // Reload history to get the latest messages (including user + AI messages)
-          // Small delay to ensure backend has finished saving
-          setTimeout(async () => {
-            if (storeSessionId || activeSessionId) {
-              try {
-                console.log('🔄 Reloading history after stream complete...');
-                await loadHistory(storeSessionId || activeSessionId || '');
-                console.log('✅ History reloaded successfully');
-              } catch (err) {
-                console.error('❌ Failed to reload history:', err);
-              }
-            }
-          }, 300);
           break;
         
         case 'stream_error':
@@ -644,13 +681,34 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }
     
     try {
-      // Clear previous state
+      // CRITICAL FIX: Add user message immediately (optimistic update)
+      const userMessageId = `user-${Date.now()}`;
+      const currentSessionId = storeSessionId || activeSessionId || '';
+      
+      const userMessage = {
+        id: userMessageId,
+        session_id: currentSessionId,
+        user_id: user.id,
+        role: 'user' as const,
+        content: content.trim(),
+        timestamp: new Date().toISOString(),
+        emotion_state: null
+      };
+      
+      // Add user message to store
+      useChatStore.getState().addMessage(userMessage);
+      console.log('✅ User message added to UI:', userMessageId);
+      
+      // Clear previous state and prepare for streaming
       setCurrentReasoningChain(null);
       setIsReasoningVisible(false);
+      
+      const aiMessageId = `ai-${Date.now()}`;
+      
       setStreamingState({
         isStreaming: true,
-        currentMessageId: null,
-        aiMessageId: null,
+        currentMessageId: userMessageId,
+        aiMessageId: aiMessageId,
         accumulatedContent: '',
         thinkingSteps: [],
         currentEmotion: null,
@@ -659,14 +717,29 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       
       setTyping(true);
       
-      // Start WebSocket streaming via chat store (which handles user message creation)
-      console.log('🚀 Starting stream for session:', storeSessionId || activeSessionId);
+      // CRITICAL FIX: Create placeholder AI message for streaming
+      const aiPlaceholderMessage = {
+        id: aiMessageId,
+        session_id: currentSessionId,
+        user_id: 'assistant',
+        role: 'assistant' as const,
+        content: '',
+        timestamp: new Date().toISOString(),
+        emotion_state: null
+      };
+      
+      // Add placeholder AI message
+      useChatStore.getState().addMessage(aiPlaceholderMessage);
+      console.log('✅ AI placeholder message added to UI:', aiMessageId);
+      
+      // Start WebSocket streaming
+      console.log('🚀 Starting stream for session:', currentSessionId);
       
       const cancel = chatAPI.streamMessage(
         {
           user_id: user.id,
           message: content.trim(),
-          session_id: storeSessionId || activeSessionId || '',
+          session_id: currentSessionId,
           context: {
             subject: initialTopic || 'general',
             enable_reasoning: enableReasoning,
@@ -680,10 +753,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       cancelStreamRef.current = cancel;
       
       // WebSocket notification (session event)
-      if ((storeSessionId || activeSessionId) && isConnected) {
+      if (currentSessionId && isConnected) {
         try {
           sendEvent('message_sent', {
-            sessionId: storeSessionId || activeSessionId,
+            sessionId: currentSessionId,
             userId: user.id
           });
         } catch (wsErr) {
@@ -836,39 +909,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             messages={messages}
             isLoading={isLoading}
             currentUserId={user?.id}
+            streamingMessageId={streamingState.aiMessageId}
             onQuestionClick={handleSuggestedQuestionClick}
           />
-          
-          {/* STREAMING MESSAGE DISPLAY (NEW) - Shows content as it streams */}
-          {streamingState.isStreaming && streamingState.accumulatedContent && (
-            <div className="px-8 py-4">
-              <div className="mx-auto" style={{ maxWidth: '768px' }}>
-                <div 
-                  className="rounded-2xl p-6 backdrop-blur-xl border shadow-lg"
-                  style={{
-                    background: 'rgba(59, 130, 246, 0.05)',
-                    borderColor: 'rgba(59, 130, 246, 0.2)'
-                  }}
-                  data-testid="streaming-message"
-                >
-                  {/* Streaming indicator */}
-                  <div className="flex items-center gap-2 mb-3 text-blue-400 text-sm font-medium">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    <span>Streaming response...</span>
-                  </div>
-                  
-                  {/* Accumulated content */}
-                  <div className="prose prose-invert max-w-none">
-                    <div className="whitespace-pre-wrap text-white/90 leading-relaxed">
-                      {streamingState.accumulatedContent}
-                      {/* Cursor animation */}
-                      <span className="inline-block w-2 h-5 ml-1 bg-blue-500 animate-pulse" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
           
           {/* Reasoning Chain Display (NEW) */}
           {isReasoningVisible && currentReasoningChain && (

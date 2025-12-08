@@ -3049,7 +3049,8 @@ from services.websocket_service import (
 @app.websocket("/api/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str = Query(...)
+    token: str = Query(...),
+    request: Request = None
 ):
     """
     WebSocket endpoint for real-time bi-directional communication
@@ -3090,6 +3091,11 @@ async def websocket_endpoint(
     # Generate connection ID
     import uuid
     connection_id = str(uuid.uuid4())
+    
+    # Get database and engine from app state
+    from utils.database import get_database
+    db = get_database()
+    engine = app.state.engine
     
     # Connect
     await manager.connect(websocket, user_id, connection_id)

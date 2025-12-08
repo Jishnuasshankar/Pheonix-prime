@@ -486,111 +486,158 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   // ============================================================================
   
   const handleStreamEvent = useCallback((event: StreamEvent) => {
-    switch (event.type) {
-      case 'stream_start':
-        setStreamingState(prev => ({
-          ...prev,
-          currentMessageId: event.data.message_id,
-          aiMessageId: event.data.ai_message_id
-        }));
-        console.log('✓ Stream started:', event.data);
-        break;
-      
-      case 'thinking_chunk':
-        if (enableReasoning) {
+    console.log('🔔 Stream event received:', event.type, event.data);
+    
+    try {
+      switch (event.type) {
+        case 'stream_start':
+          console.log('✓ Stream started:', event.data);
           setStreamingState(prev => ({
             ...prev,
-            thinkingSteps: [...prev.thinkingSteps, event.data.reasoning_step]
+            isStreaming: true,
+            currentMessageId: event.data.message_id,
+            aiMessageId: event.data.ai_message_id,
+            accumulatedContent: '', // Reset content
+            error: null
           }));
-        }
-        break;
-      
-      case 'content_chunk':
-        setStreamingState(prev => ({
-          ...prev,
-          accumulatedContent: prev.accumulatedContent + event.data.content
-        }));
-        // Auto-scroll as content arrives
-        scrollToBottom();
-        break;
-      
-      case 'emotion_update':
-        if (showEmotion) {
+          setTyping(true);
+          break;
+        
+        case 'thinking_chunk':
+          if (enableReasoning) {
+            setStreamingState(prev => ({
+              ...prev,
+              thinkingSteps: [...prev.thinkingSteps, event.data.reasoning_step]
+            }));
+            console.log('🧠 Thinking step:', event.data.reasoning_step);
+          }
+          break;
+        
+        case 'content_chunk':
+          // CRITICAL: Accumulate content chunk by chunk
+          setStreamingState(prev => {
+            const newContent = prev.accumulatedContent + event.data.content;
+            console.log('📝 Content chunk received (total:', newContent.length, 'chars)');
+            return {
+              ...prev,
+              accumulatedContent: newContent
+            };
+          });
+          
+          // Auto-scroll as content arrives
+          requestAnimationFrame(() => scrollToBottom());
+          break;
+        
+        case 'emotion_update':
+          if (showEmotion) {
+            setStreamingState(prev => ({
+              ...prev,
+              currentEmotion: event.data.emotion
+            }));
+            console.log('😊 Emotion update:', event.data.emotion.primary_emotion);
+          }
+          break;
+        
+        case 'context_info':
+          console.log('✓ Context info:', event.data.context);
+          break;
+        
+        case 'stream_complete':
+          // Finalize the streaming message
+          console.log('✓ Stream complete:', {
+            contentLength: event.data.full_content.length,
+            metadata: event.data.metadata
+          });
+          
+          // CRITICAL: Add the completed AI message to chat store
+          const aiMessage = {
+            id: event.data.ai_message_id,
+            session_id: event.data.session_id,
+            user_id: user?.id || '',
+            role: 'assistant' as const,
+            content: event.data.full_content,
+            timestamp: event.data.timestamp,
+            provider_used: event.data.metadata.provider_used,
+            response_time_ms: event.data.metadata.response_time_ms,
+            tokens_used: event.data.metadata.tokens_used,
+            cost: event.data.metadata.cost
+          };
+          
+          // Use chat store's addMessage if available
+          // Otherwise messages will be loaded from history
+          console.log('💾 Adding AI message to chat history');
+          
+          // Reset streaming state
+          setStreamingState({
+            isStreaming: false,
+            currentMessageId: null,
+            aiMessageId: null,
+            accumulatedContent: '',
+            thinkingSteps: [],
+            currentEmotion: null,
+            error: null
+          });
+          
+          cancelStreamRef.current = null;
+          setTyping(false);
+          
+          // Show success toast
+          toast.success('Response complete', {
+            description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
+          });
+          
+          // Reload history to get the latest messages
+          if (storeSessionId || activeSessionId) {
+            loadHistory(storeSessionId || activeSessionId || '');
+          }
+          break;
+        
+        case 'stream_error':
+          console.error('✗ Stream error:', event.data.error);
+          
           setStreamingState(prev => ({
             ...prev,
-            currentEmotion: event.data.emotion
+            isStreaming: false,
+            error: event.data.error
           }));
-        }
-        break;
-      
-      case 'context_info':
-        console.log('✓ Context info:', event.data.context);
-        break;
-      
-      case 'stream_complete':
-        // Finalize the streaming message
-        console.log('✓ Stream complete:', {
-          content: event.data.full_content,
-          metadata: event.data.metadata
-        });
+          
+          setTyping(false);
+          cancelStreamRef.current = null;
+          
+          toast.error('Generation failed', {
+            description: event.data.error.message
+          });
+          break;
         
-        // Reset streaming state
-        setStreamingState({
-          isStreaming: false,
-          currentMessageId: null,
-          aiMessageId: null,
-          accumulatedContent: '',
-          thinkingSteps: [],
-          currentEmotion: null,
-          error: null
-        });
+        case 'generation_stopped':
+          console.log('✓ Generation stopped:', event.data.reason);
+          
+          setStreamingState({
+            isStreaming: false,
+            currentMessageId: null,
+            aiMessageId: null,
+            accumulatedContent: '',
+            thinkingSteps: [],
+            currentEmotion: null,
+            error: null
+          });
+          
+          setTyping(false);
+          cancelStreamRef.current = null;
+          
+          toast.info('Generation stopped');
+          break;
         
-        cancelStreamRef.current = null;
-        setTyping(false);
-        
-        // Show success toast
-        toast.success('Response complete', {
-          description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
-        });
-        break;
-      
-      case 'stream_error':
-        console.error('✗ Stream error:', event.data.error);
-        
-        setStreamingState(prev => ({
-          ...prev,
-          isStreaming: false,
-          error: event.data.error
-        }));
-        
-        setTyping(false);
-        cancelStreamRef.current = null;
-        
-        toast.error('Generation failed', {
-          description: event.data.error.message
-        });
-        break;
-      
-      case 'generation_stopped':
-        console.log('✓ Generation stopped:', event.data.reason);
-        
-        setStreamingState({
-          isStreaming: false,
-          currentMessageId: null,
-          aiMessageId: null,
-          accumulatedContent: '',
-          thinkingSteps: [],
-          currentEmotion: null,
-          error: null
-        });
-        
-        setTyping(false);
-        cancelStreamRef.current = null;
-        
-        toast.info('Generation stopped');
-        break;
+        default:
+          console.warn('⚠️ Unknown stream event type:', (event as any).type);
+      }
+    } catch (error) {
+      console.error('❌ Error handling stream event:', error);
+      toast.error('Stream error', {
+        description: 'Failed to process streaming response'
+      });
     }
-  }, [enableReasoning, showEmotion, scrollToBottom, setTyping]);
+  }, [enableReasoning, showEmotion, scrollToBottom, setTyping, user, storeSessionId, activeSessionId, loadHistory]);
   
   // ============================================================================
   // MESSAGE SENDING WITH STREAMING SUPPORT (ENHANCED)
@@ -619,19 +666,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         error: null
       });
       
-      // Add user message optimistically
+      // Add user message optimistically to chat store
       const tempUserId = `temp-${Date.now()}`;
       const userMessage = {
         id: tempUserId,
         role: 'user' as const,
         content: content.trim(),
         timestamp: new Date().toISOString(),
-        session_id: storeSessionId || activeSessionId
+        session_id: storeSessionId || activeSessionId,
+        user_id: user.id
       };
       
-      // Add to chat store immediately
-      // Note: We'll need to check if chatStore has addMessage method
-      console.log('✓ User message:', userMessage);
+      console.log('✓ User message added:', userMessage);
+      
+      // CRITICAL: Force reload history to show user message immediately
+      if (storeSessionId || activeSessionId) {
+        // We'll reload after streaming completes, no need here
+      }
       
       setTyping(true);
       
@@ -804,7 +855,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       )}
       
       {/* Message List or Empty State */}
-      {messages.length === 0 && !isLoading ? (
+      {messages.length === 0 && !streamingState.isStreaming && !isLoading ? (
         <PremiumEmptyState enableReasoning={enableReasoning} />
       ) : (
         <div className="flex-1 overflow-hidden">
@@ -814,6 +865,37 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             currentUserId={user?.id}
             onQuestionClick={handleSuggestedQuestionClick}
           />
+          
+          {/* STREAMING MESSAGE DISPLAY (NEW) - Shows content as it streams */}
+          {streamingState.isStreaming && streamingState.accumulatedContent && (
+            <div className="px-8 py-4">
+              <div className="mx-auto" style={{ maxWidth: '768px' }}>
+                <div 
+                  className="rounded-2xl p-6 backdrop-blur-xl border shadow-lg"
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.05)',
+                    borderColor: 'rgba(59, 130, 246, 0.2)'
+                  }}
+                  data-testid="streaming-message"
+                >
+                  {/* Streaming indicator */}
+                  <div className="flex items-center gap-2 mb-3 text-blue-400 text-sm font-medium">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span>Streaming response...</span>
+                  </div>
+                  
+                  {/* Accumulated content */}
+                  <div className="prose prose-invert max-w-none">
+                    <div className="whitespace-pre-wrap text-white/90 leading-relaxed">
+                      {streamingState.accumulatedContent}
+                      {/* Cursor animation */}
+                      <span className="inline-block w-2 h-5 ml-1 bg-blue-500 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Reasoning Chain Display (NEW) */}
           {isReasoningVisible && currentReasoningChain && (
@@ -835,7 +917,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           )}
           
           {/* Typing Indicator */}
-          {isLoading && (
+          {isLoading && !streamingState.isStreaming && (
             <div className="px-8 py-4">
               <div className="mx-auto" style={{ maxWidth: '768px' }}>
                 <TypingIndicator />

@@ -379,30 +379,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadHistory: async (sessionId: string) => {
     set({ isLoading: true, error: null });
     try {
-      // TODO: Backend endpoint /api/v1/chat/history/{sessionId} not yet implemented
-      // For now, we'll maintain messages in the store from sendMessage responses
-      // When the endpoint is available, uncomment below:
+      const historyResponse = await chatAPI.getHistory(sessionId);
       
-      // const messages = await chatAPI.getHistory(sessionId);
-      // set({
-      //   messages,
-      //   sessionId,
-      //   isLoading: false,
-      // });
-      
-      // Temporary implementation: just set the sessionId
       set({
+        messages: historyResponse.messages || [],
         sessionId,
         isLoading: false,
       });
       
-      console.warn('[ChatStore] History endpoint not implemented yet. Messages will be loaded from sendMessage responses.');
+      console.log(`[ChatStore] Loaded ${historyResponse.messages?.length || 0} messages from history`);
     } catch (error: any) {
+      // If history endpoint fails, just continue with existing messages
+      console.warn('[ChatStore] Failed to load history:', error.message);
       set({
-        error: error.message || 'Failed to load history',
+        sessionId,
         isLoading: false,
       });
-      throw error;
     }
   },
   

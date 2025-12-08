@@ -576,29 +576,33 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           });
           
           // CRITICAL FIX: Finalize the AI message with all metadata
-          if (streamingState.aiMessageId) {
-            const chatStore = useChatStore.getState();
-            const messages = chatStore.messages;
-            const messageIndex = messages.findIndex(m => m.id === finalState.aiMessageId);
-            
-            if (messageIndex !== -1) {
-              const updatedMessages = [...messages];
-              updatedMessages[messageIndex] = {
-                ...updatedMessages[messageIndex],
-                id: event.data.ai_message_id, // Use real backend message ID
-                content: event.data.full_content,
-                emotion_state: streamingState.currentEmotion,
-                provider_used: event.data.metadata.provider_used,
-                response_time_ms: event.data.metadata.response_time_ms,
-                tokens_used: event.data.metadata.tokens_used,
-                cost: event.data.metadata.cost
-              };
+          setStreamingState(prev => {
+            if (prev.aiMessageId) {
+              const chatStore = useChatStore.getState();
+              const messages = chatStore.messages;
+              const messageIndex = messages.findIndex(m => m.id === prev.aiMessageId);
               
-              // Update messages in store
-              useChatStore.setState({ messages: updatedMessages });
-              console.log('✅ AI message finalized with metadata:', event.data.ai_message_id);
+              if (messageIndex !== -1) {
+                const updatedMessages = [...messages];
+                updatedMessages[messageIndex] = {
+                  ...updatedMessages[messageIndex],
+                  id: event.data.ai_message_id, // Use real backend message ID
+                  content: event.data.full_content,
+                  emotion_state: prev.currentEmotion,
+                  provider_used: event.data.metadata.provider_used,
+                  response_time_ms: event.data.metadata.response_time_ms,
+                  tokens_used: event.data.metadata.tokens_used,
+                  cost: event.data.metadata.cost
+                };
+                
+                // Update messages in store
+                useChatStore.setState({ messages: updatedMessages });
+                console.log('✅ AI message finalized with metadata:', event.data.ai_message_id);
+              }
             }
-          }
+            
+            return prev;
+          });
           
           // Reset streaming state
           setStreamingState({

@@ -16,7 +16,7 @@
  * - Automatic keepalive pings every 30s
  */
 
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore as authStore } from '@/store/authStore';
 
 // Event types for type safety
 export type WebSocketEvent = 
@@ -91,7 +91,7 @@ class NativeSocketClient {
     }
     
     // CRITICAL: Wait for auth to be ready
-    const authState = useAuthStore.getState();
+    const authState = authStore.getState();
     const token = authState.accessToken;
     const isAuthLoading = authState.isAuthLoading;
     
@@ -226,6 +226,14 @@ class NativeSocketClient {
       
     } catch (error) {
       console.error('[WebSocket] Failed to parse message:', error);
+      console.error('[WebSocket] Raw message data:', event.data);
+      
+      // Notify error handler to prevent silent failures
+      this._emit('error', {
+        message: 'Failed to parse WebSocket message',
+        code: 'PARSE_ERROR',
+        raw: event.data
+      });
     }
   }
 

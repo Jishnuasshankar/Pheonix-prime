@@ -549,24 +549,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             metadata: event.data.metadata
           });
           
-          // CRITICAL: Add the completed AI message to chat store
-          const aiMessage = {
-            id: event.data.ai_message_id,
-            session_id: event.data.session_id,
-            user_id: user?.id || '',
-            role: 'assistant' as const,
-            content: event.data.full_content,
-            timestamp: event.data.timestamp,
-            provider_used: event.data.metadata.provider_used,
-            response_time_ms: event.data.metadata.response_time_ms,
-            tokens_used: event.data.metadata.tokens_used,
-            cost: event.data.metadata.cost
-          };
-          
-          // Use chat store's addMessage if available
-          // Otherwise messages will be loaded from history
-          console.log('💾 Adding AI message to chat history');
-          
           // Reset streaming state
           setStreamingState({
             isStreaming: false,
@@ -586,10 +568,19 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
           });
           
-          // Reload history to get the latest messages
-          if (storeSessionId || activeSessionId) {
-            loadHistory(storeSessionId || activeSessionId || '');
-          }
+          // Reload history to get the latest messages (including user + AI messages)
+          // Small delay to ensure backend has finished saving
+          setTimeout(async () => {
+            if (storeSessionId || activeSessionId) {
+              try {
+                console.log('🔄 Reloading history after stream complete...');
+                await loadHistory(storeSessionId || activeSessionId || '');
+                console.log('✅ History reloaded successfully');
+              } catch (err) {
+                console.error('❌ Failed to reload history:', err);
+              }
+            }
+          }, 300);
           break;
         
         case 'stream_error':
@@ -666,27 +657,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         error: null
       });
       
-      // Add user message optimistically to chat store
-      const tempUserId = `temp-${Date.now()}`;
-      const userMessage = {
-        id: tempUserId,
-        role: 'user' as const,
-        content: content.trim(),
-        timestamp: new Date().toISOString(),
-        session_id: storeSessionId || activeSessionId,
-        user_id: user.id
-      };
-      
-      console.log('✓ User message added:', userMessage);
-      
-      // CRITICAL: Force reload history to show user message immediately
-      if (storeSessionId || activeSessionId) {
-        // We'll reload after streaming completes, no need here
-      }
-      
       setTyping(true);
       
-      // Start WebSocket streaming
+      // Start WebSocket streaming via chat store (which handles user message creation)
       console.log('🚀 Starting stream for session:', storeSessionId || activeSessionId);
       
       const cancel = chatAPI.streamMessage(

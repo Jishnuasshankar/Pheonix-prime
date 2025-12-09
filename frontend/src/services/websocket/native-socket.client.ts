@@ -211,10 +211,24 @@ class NativeSocketClient {
 
   /**
    * Handle incoming WebSocket message
+   * 
+   * ✅ FIX #3: Enhanced error handling with message validation
    */
   private _handleMessage(event: MessageEvent): void {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
+      
+      // ✅ FIX #3: Validate message structure before processing
+      if (!message.type || !message.data) {
+        console.error('[WebSocket] Invalid message structure:', message);
+        this._emit('error', {
+          message: 'Invalid WebSocket message structure',
+          code: 'INVALID_MESSAGE',
+          raw: event.data,
+          recoverable: true
+        });
+        return;
+      }
       
       // Handle heartbeat response
       if (message.type === 'pong' as any) {
@@ -228,11 +242,21 @@ class NativeSocketClient {
       console.error('[WebSocket] Failed to parse message:', error);
       console.error('[WebSocket] Raw message data:', event.data);
       
-      // Notify error handler to prevent silent failures
+      // ✅ FIX #3: Enhanced error event with detailed information
       this._emit('error', {
         message: 'Failed to parse WebSocket message',
         code: 'PARSE_ERROR',
-        raw: event.data
+        raw: event.data,
+        recoverable: true,
+        details: error instanceof Error ? error.message : String(error)
+      });
+      
+      // ✅ FIX #3: Notify user via toast for critical parsing errors
+      import('@/store/uiStore').then(({ useUIStore }) => {
+        useUIStore.getState().showToast({
+          type: 'error',
+          message: 'Communication error. Please refresh if issue persists.',
+        });
       });
     }
   }

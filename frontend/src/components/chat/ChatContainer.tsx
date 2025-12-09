@@ -521,10 +521,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           break;
         
         case 'content_chunk':
+          // ✅ FIX #4: Enhanced logging for debugging
+          console.log('📝 Content chunk received:', {
+            chunkLength: event.data.content?.length || 0,
+            chunkIndex: event.data.chunk_index,
+            totalAccumulated: streamingState.accumulatedContent.length,
+            aiMessageId: streamingState.aiMessageId
+          });
+          
           // CRITICAL: Accumulate content chunk by chunk and update AI message in real-time
           setStreamingState(prev => {
             const newContent = prev.accumulatedContent + event.data.content;
-            console.log('📝 Content chunk received (total:', newContent.length, 'chars)');
             
             // CRITICAL FIX: Update the AI message content in messages array
             if (prev.aiMessageId) {
@@ -533,6 +540,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
               const messageIndex = messages.findIndex(m => m.id === prev.aiMessageId);
               
               if (messageIndex !== -1) {
+                // ✅ Message found - update it
                 const updatedMessages = [...messages];
                 updatedMessages[messageIndex] = {
                   ...updatedMessages[messageIndex],
@@ -541,7 +549,39 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 
                 // Update messages in store
                 useChatStore.setState({ messages: updatedMessages });
+                
+                console.log('✅ AI message updated:', {
+                  messageId: prev.aiMessageId,
+                  contentLength: newContent.length
+                });
+              } else {
+                // ✅ FIX #4: Message not found - recreate it (defensive)
+                console.error('❌ AI message not found in store:', {
+                  aiMessageId: prev.aiMessageId,
+                  currentMessages: messages.map(m => ({ id: m.id, role: m.role })),
+                  contentLength: newContent.length
+                });
+                
+                // ✅ FIX #4: Recreate missing message
+                const missingMessage = {
+                  id: prev.aiMessageId,
+                  session_id: event.data.session_id || storeSessionId || activeSessionId || '',
+                  user_id: 'assistant',
+                  role: 'assistant' as const,
+                  content: newContent,
+                  timestamp: new Date().toISOString(),
+                  emotion_state: prev.currentEmotion
+                };
+                
+                chatStore.addMessage(missingMessage);
+                
+                console.log('✅ AI message recreated:', {
+                  messageId: prev.aiMessageId,
+                  contentLength: newContent.length
+                });
               }
+            } else {
+              console.warn('⚠️ No aiMessageId in streaming state - cannot update message');
             }
             
             return {
@@ -677,6 +717,15 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !user) return;
+    
+    // ✅ FIX #2: Check WebSocket connection before sending
+    if (!isConnected) {
+      toast.error('Connection Error', {
+        description: 'Not connected to server. Please wait for reconnection...'
+      });
+      console.warn('⚠️ WebSocket not connected, cannot send message');
+      return;
+    }
     
     // Prevent sending if already streaming
     if (streamingState.isStreaming) {

@@ -37,8 +37,6 @@ import { cn } from '@/utils/cn';
 import { toast } from '@/components/ui/Toast';
 import { AlertCircle, Wifi, WifiOff, Sparkles, Brain, Zap } from 'lucide-react';
 import type { ReasoningChain, ThinkingMode, ReasoningResponse } from '@/types/reasoning.types';
-import { chatAPI } from '@/services/api/chat.api';
-import type { StreamEvent, StreamingState } from '@/types/chat.types';
 
 // Lazy load reasoning display component (improves initial load)
 const ReasoningChainDisplay = lazy(() =>
@@ -372,21 +370,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   const [currentReasoningChain, setCurrentReasoningChain] = useState<ReasoningChain | null>(null);
   const [isReasoningVisible, setIsReasoningVisible] = useState(false);
   
-  // NEW: Streaming state for WebSocket streaming
-  const [streamingState, setStreamingState] = useState<StreamingState>({
-    isStreaming: false,
-    currentMessageId: null,
-    aiMessageId: null,
-    accumulatedContent: '',
-    thinkingSteps: [],
-    currentEmotion: null,
-    error: null
-  });
-  
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const cancelStreamRef = useRef<(() => void) | null>(null);
   
   // Navigation
   const navigate = useNavigate();
@@ -482,334 +468,57 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
   }, [messages.length, scrollToBottom]);
   
   // ============================================================================
-  // STREAMING EVENT HANDLER (NEW)
-  // ============================================================================
-  
-  const handleStreamEvent = useCallback((event: StreamEvent) => {
-    console.log('🔔 Stream event received:', event.type, event.data);
-    
-    try {
-      switch (event.type) {
-        case 'stream_start':
-          console.log('✓ Stream started:', event.data);
-          setStreamingState(prev => ({
-            ...prev,
-            isStreaming: true,
-            currentMessageId: event.data.message_id,
-            aiMessageId: event.data.ai_message_id,
-            accumulatedContent: '', // Reset content
-            error: null
-          }));
-          
-          // Update session ID if it's a new session
-          if (event.data.session_id && !storeSessionId) {
-            useChatStore.setState({ sessionId: event.data.session_id });
-            console.log('✅ Session ID set:', event.data.session_id);
-          }
-          
-          setTyping(true);
-          break;
-        
-        case 'thinking_chunk':
-          if (enableReasoning) {
-            setStreamingState(prev => ({
-              ...prev,
-              thinkingSteps: [...prev.thinkingSteps, event.data.reasoning_step]
-            }));
-            console.log('🧠 Thinking step:', event.data.reasoning_step);
-          }
-          break;
-        
-        case 'content_chunk':
-          // ✅ FIX #4: Enhanced logging for debugging
-          console.log('📝 Content chunk received:', {
-            chunkLength: event.data.content?.length || 0,
-            chunkIndex: event.data.chunk_index,
-            totalAccumulated: streamingState.accumulatedContent.length,
-            aiMessageId: streamingState.aiMessageId
-          });
-          
-          // CRITICAL: Accumulate content chunk by chunk and update AI message in real-time
-          setStreamingState(prev => {
-            const newContent = prev.accumulatedContent + event.data.content;
-            
-            // CRITICAL FIX: Update the AI message content in messages array
-            if (prev.aiMessageId) {
-              const chatStore = useChatStore.getState();
-              const messages = chatStore.messages;
-              const messageIndex = messages.findIndex(m => m.id === prev.aiMessageId);
-              
-              if (messageIndex !== -1) {
-                // ✅ Message found - update it
-                const updatedMessages = [...messages];
-                updatedMessages[messageIndex] = {
-                  ...updatedMessages[messageIndex],
-                  content: newContent
-                };
-                
-                // Update messages in store
-                useChatStore.setState({ messages: updatedMessages });
-                
-                console.log('✅ AI message updated:', {
-                  messageId: prev.aiMessageId,
-                  contentLength: newContent.length
-                });
-              } else {
-                // ✅ FIX #4: Message not found - recreate it (defensive)
-                console.error('❌ AI message not found in store:', {
-                  aiMessageId: prev.aiMessageId,
-                  currentMessages: messages.map(m => ({ id: m.id, role: m.role })),
-                  contentLength: newContent.length
-                });
-                
-                // ✅ FIX #4: Recreate missing message
-                const missingMessage = {
-                  id: prev.aiMessageId,
-                  session_id: event.data.session_id || storeSessionId || activeSessionId || '',
-                  user_id: 'assistant',
-                  role: 'assistant' as const,
-                  content: newContent,
-                  timestamp: new Date().toISOString(),
-                  emotion_state: prev.currentEmotion
-                };
-                
-                chatStore.addMessage(missingMessage);
-                
-                console.log('✅ AI message recreated:', {
-                  messageId: prev.aiMessageId,
-                  contentLength: newContent.length
-                });
-              }
-            } else {
-              console.warn('⚠️ No aiMessageId in streaming state - cannot update message');
-            }
-            
-            return {
-              ...prev,
-              accumulatedContent: newContent
-            };
-          });
-          
-          // Auto-scroll as content arrives
-          requestAnimationFrame(() => scrollToBottom());
-          break;
-        
-        case 'emotion_update':
-          if (showEmotion) {
-            setStreamingState(prev => ({
-              ...prev,
-              currentEmotion: event.data.emotion
-            }));
-            console.log('😊 Emotion update:', event.data.emotion.primary_emotion);
-          }
-          break;
-        
-        case 'context_info':
-          console.log('✓ Context info:', event.data.context);
-          break;
-        
-        case 'stream_complete':
-          // Finalize the streaming message
-          console.log('✓ Stream complete:', {
-            contentLength: event.data.full_content.length,
-            metadata: event.data.metadata
-          });
-          
-          // CRITICAL FIX: Finalize the AI message with all metadata
-          setStreamingState(prev => {
-            if (prev.aiMessageId) {
-              const chatStore = useChatStore.getState();
-              const messages = chatStore.messages;
-              const messageIndex = messages.findIndex(m => m.id === prev.aiMessageId);
-              
-              if (messageIndex !== -1) {
-                const updatedMessages = [...messages];
-                updatedMessages[messageIndex] = {
-                  ...updatedMessages[messageIndex],
-                  id: event.data.ai_message_id, // Use real backend message ID
-                  content: event.data.full_content,
-                  emotion_state: prev.currentEmotion,
-                  provider_used: event.data.metadata.provider_used,
-                  response_time_ms: event.data.metadata.response_time_ms,
-                  tokens_used: event.data.metadata.tokens_used,
-                  cost: event.data.metadata.cost
-                };
-                
-                // Update messages in store
-                useChatStore.setState({ messages: updatedMessages });
-                console.log('✅ AI message finalized with metadata:', event.data.ai_message_id);
-              }
-            }
-            
-            return prev;
-          });
-          
-          // Reset streaming state
-          setStreamingState({
-            isStreaming: false,
-            currentMessageId: null,
-            aiMessageId: null,
-            accumulatedContent: '',
-            thinkingSteps: [],
-            currentEmotion: null,
-            error: null
-          });
-          
-          cancelStreamRef.current = null;
-          setTyping(false);
-          
-          // Show success toast
-          toast.success('Response complete', {
-            description: `Processed in ${(event.data.metadata.response_time_ms / 1000).toFixed(1)}s`
-          });
-          break;
-        
-        case 'stream_error':
-          console.error('✗ Stream error:', event.data.error);
-          
-          setStreamingState(prev => ({
-            ...prev,
-            isStreaming: false,
-            error: event.data.error
-          }));
-          
-          setTyping(false);
-          cancelStreamRef.current = null;
-          
-          toast.error('Generation failed', {
-            description: event.data.error.message
-          });
-          break;
-        
-        case 'generation_stopped':
-          console.log('✓ Generation stopped:', event.data.reason);
-          
-          setStreamingState({
-            isStreaming: false,
-            currentMessageId: null,
-            aiMessageId: null,
-            accumulatedContent: '',
-            thinkingSteps: [],
-            currentEmotion: null,
-            error: null
-          });
-          
-          setTyping(false);
-          cancelStreamRef.current = null;
-          
-          toast.info('Generation stopped');
-          break;
-        
-        default:
-          console.warn('⚠️ Unknown stream event type:', (event as any).type);
-      }
-    } catch (error) {
-      console.error('❌ Error handling stream event:', error);
-      toast.error('Stream error', {
-        description: 'Failed to process streaming response'
-      });
-    }
-  }, [enableReasoning, showEmotion, scrollToBottom, setTyping, user, storeSessionId, activeSessionId, loadHistory]);
-  
-  // ============================================================================
-  // MESSAGE SENDING WITH STREAMING SUPPORT (ENHANCED)
+  // MESSAGE SENDING WITH REASONING SUPPORT (ENHANCED)
   // ============================================================================
   
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !user) return;
     
-    // ✅ FIX #2: Check WebSocket connection before sending
-    if (!isConnected) {
-      toast.error('Connection Error', {
-        description: 'Not connected to server. Please wait for reconnection...'
-      });
-      console.warn('⚠️ WebSocket not connected, cannot send message');
-      return;
-    }
-    
-    // Prevent sending if already streaming
-    if (streamingState.isStreaming) {
-      console.warn('⚠️ Already streaming, ignoring new message');
-      return;
-    }
-    
     try {
-      // CRITICAL FIX: Add user message immediately (optimistic update)
-      const userMessageId = `user-${Date.now()}`;
-      const currentSessionId = storeSessionId || activeSessionId || '';
-      
-      const userMessage = {
-        id: userMessageId,
-        session_id: currentSessionId,
-        user_id: user.id,
-        role: 'user' as const,
-        content: content.trim(),
-        timestamp: new Date().toISOString(),
-        emotion_state: null
-      };
-      
-      // Add user message to store
-      useChatStore.getState().addMessage(userMessage);
-      console.log('✅ User message added to UI:', userMessageId);
-      
-      // Clear previous state and prepare for streaming
+      // Clear previous reasoning chain
       setCurrentReasoningChain(null);
       setIsReasoningVisible(false);
       
-      const aiMessageId = `ai-${Date.now()}`;
-      
-      setStreamingState({
-        isStreaming: true,
-        currentMessageId: userMessageId,
-        aiMessageId: aiMessageId,
-        accumulatedContent: '',
-        thinkingSteps: [],
-        currentEmotion: null,
-        error: null
-      });
-      
-      setTyping(true);
-      
-      // CRITICAL FIX: Create placeholder AI message for streaming
-      const aiPlaceholderMessage = {
-        id: aiMessageId,
-        session_id: currentSessionId,
-        user_id: 'assistant',
-        role: 'assistant' as const,
-        content: '',
-        timestamp: new Date().toISOString(),
-        emotion_state: null
-      };
-      
-      // Add placeholder AI message
-      useChatStore.getState().addMessage(aiPlaceholderMessage);
-      console.log('✅ AI placeholder message added to UI:', aiMessageId);
-      
-      // Start WebSocket streaming
-      console.log('🚀 Starting stream for session:', currentSessionId);
-      
-      const cancel = chatAPI.streamMessage(
-        {
+      // Determine which endpoint to use
+      if (enableReasoning) {
+        // FIX: Use reasoning API client instead of raw fetch
+        const { chatWithReasoning } = await import('@/services/api/reasoning');
+        
+        const reasoningResponse = await chatWithReasoning({
           user_id: user.id,
+          session_id: storeSessionId || undefined,
           message: content.trim(),
-          session_id: currentSessionId,
-          context: {
-            subject: initialTopic || 'general',
-            enable_reasoning: enableReasoning,
-            enable_rag: false
-          }
-        },
-        handleStreamEvent
-      );
+          enable_reasoning: true,
+          thinking_mode: undefined, // Let engine auto-select
+          max_reasoning_depth: 5,
+          context: {}
+        });
+        
+        // Update store with new message (this will trigger UI update)
+        await storeSendMessage(content.trim(), user.id);
+        
+        // If reasoning chain is available, display it
+        if (reasoningResponse.reasoning_enabled && reasoningResponse.reasoning_chain) {
+          setCurrentReasoningChain(reasoningResponse.reasoning_chain);
+          setIsReasoningVisible(true);
+          
+          // Log for debugging
+          console.log('✓ Reasoning chain received:', reasoningResponse.reasoning_chain);
+        } else {
+          console.warn('⚠️ Reasoning was enabled but no chain returned');
+        }
+        
+      } else {
+        // Use standard chat endpoint (existing flow)
+        await storeSendMessage(content.trim(), user.id);
+      }
       
-      // Store cancel function
-      cancelStreamRef.current = cancel;
-      
-      // WebSocket notification (session event)
-      if (currentSessionId && isConnected) {
+      // WebSocket notification
+      if (storeSessionId && isConnected) {
         try {
-          sendEvent('message_sent', {
-            sessionId: currentSessionId,
+          sendEvent({
+            type: 'message_sent',
+            sessionId: storeSessionId,
             userId: user.id
           });
         } catch (wsErr) {
@@ -819,19 +528,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       
     } catch (err: unknown) {
       console.error('Failed to send message:', err);
-      
-      setStreamingState(prev => ({
-        ...prev,
-        isStreaming: false,
-        error: {
-          code: 'SEND_FAILED',
-          message: 'Failed to start streaming',
-          recoverable: true
-        }
-      }));
-      
-      setTyping(false);
-      cancelStreamRef.current = null;
       
       const error = err as { code?: string; response?: { status?: number; data?: { detail?: string } }; message?: string };
       
@@ -863,26 +559,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         description: errorMessage
       });
     }
-  }, [user, streamingState.isStreaming, storeSessionId, activeSessionId, initialTopic, enableReasoning, isConnected, sendEvent, setTyping, handleStreamEvent]);
-  
-  // ============================================================================
-  // STOP GENERATION HANDLER (NEW)
-  // ============================================================================
-  
-  const handleStopGeneration = useCallback(() => {
-    if (cancelStreamRef.current) {
-      console.log('🛑 Stopping generation...');
-      cancelStreamRef.current();
-      
-      setStreamingState(prev => ({
-        ...prev,
-        isStreaming: false
-      }));
-      
-      setTyping(false);
-      toast.info('Stopping generation...');
-    }
-  }, [setTyping]);
+  }, [user, enableReasoning, storeSendMessage, storeSessionId, isConnected, sendEvent]);
   
   // ============================================================================
   // SUGGESTED QUESTIONS HANDLER
@@ -954,7 +631,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
       )}
       
       {/* Message List or Empty State */}
-      {messages.length === 0 && !streamingState.isStreaming && !isLoading ? (
+      {messages.length === 0 && !isLoading ? (
         <PremiumEmptyState enableReasoning={enableReasoning} />
       ) : (
         <div className="flex-1 overflow-hidden">
@@ -962,7 +639,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             messages={messages}
             isLoading={isLoading}
             currentUserId={user?.id}
-            streamingMessageId={streamingState.aiMessageId}
             onQuestionClick={handleSuggestedQuestionClick}
           />
           
@@ -986,7 +662,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
           )}
           
           {/* Typing Indicator */}
-          {isLoading && !streamingState.isStreaming && (
+          {isLoading && (
             <div className="px-8 py-4">
               <div className="mx-auto" style={{ maxWidth: '768px' }}>
                 <TypingIndicator />
@@ -1023,13 +699,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             <div className="flex-1">
               <MessageInput
                 onSend={handleSendMessage}
-                disabled={isLoading || streamingState.isStreaming}
-                showStopButton={streamingState.isStreaming}
-                onStop={handleStopGeneration}
+                disabled={isLoading}
                 placeholder={
-                  streamingState.isStreaming
-                    ? 'Streaming response...'
-                    : isLoading
+                  isLoading
                     ? enableReasoning 
                       ? 'AI is thinking deeply...'
                       : 'AI is thinking...'

@@ -1006,7 +1006,7 @@ class ProviderManager:
         tokens_generated = 0
         
         try:
-            provider_config = self.registry.get_provider(provider_name)
+            provider_config = self.providers.get(provider_name)
             if not provider_config:
                 raise ProviderError(f"Unknown provider: {provider_name}")
             

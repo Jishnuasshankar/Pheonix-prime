@@ -16,7 +16,7 @@
  * - Automatic keepalive pings every 30s
  */
 
-import { useAuthStore as authStore } from '@/store/authStore';
+import { useAuthStore } from '@/store/authStore';
 
 // Event types for type safety
 export type WebSocketEvent = 
@@ -29,18 +29,7 @@ export type WebSocketEvent =
   | 'user_typing'
   | 'join_session'
   | 'leave_session'
-  | 'message_sent'
-  // NEW: Streaming events for real-time chat
-  | 'stream_start'
-  | 'thinking_chunk'
-  | 'content_chunk'
-  | 'context_info'
-  | 'stream_complete'
-  | 'stream_error'
-  | 'generation_stopped'
-  | 'connect'
-  | 'disconnect'
-  | 'pong';
+  | 'message_sent';
 
 interface WebSocketMessage {
   type: WebSocketEvent;
@@ -64,44 +53,9 @@ class NativeSocketClient {
 
   /**
    * Initialize WebSocket connection
-   * 
-   * CRITICAL FIX: Only connect if:
-   * 1. Not already connected/connecting
-   * 2. Auth token is available
-   * 3. Auth check is complete
    */
   connect(): void {
-    // CRITICAL: Prevent multiple simultaneous connection attempts
-    if (this.ws) {
-      const state = this.ws.readyState;
-      if (state === WebSocket.CONNECTING) {
-        console.log('[WebSocket] Already connecting, skipping');
-        return;
-      }
-      if (state === WebSocket.OPEN) {
-        console.log('[WebSocket] Already connected, skipping');
-        return;
-      }
-      // CLOSING or CLOSED states - allow reconnect but clean up first
-      if (state === WebSocket.CLOSING) {
-        console.log('[WebSocket] Still closing previous connection, deferring');
-        setTimeout(() => this.connect(), 500);
-        return;
-      }
-    }
-    
-    // CRITICAL: Wait for auth to be ready
-    const authState = authStore.getState();
-    const token = authState.accessToken;
-    const isAuthLoading = authState.isAuthLoading;
-    
-    // Don't connect if auth is still checking
-    if (isAuthLoading) {
-      console.log('[WebSocket] Auth still loading, deferring connection');
-      // Retry after auth is ready
-      setTimeout(() => this.connect(), 100);
-      return;
-    }
+    const token = useAuthStore.getState().accessToken;
     
     if (!token) {
       console.warn('[WebSocket] No token available for WebSocket connection');
@@ -211,24 +165,10 @@ class NativeSocketClient {
 
   /**
    * Handle incoming WebSocket message
-   * 
-   * ✅ FIX #3: Enhanced error handling with message validation
    */
   private _handleMessage(event: MessageEvent): void {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
-      
-      // ✅ FIX #3: Validate message structure before processing
-      if (!message.type || !message.data) {
-        console.error('[WebSocket] Invalid message structure:', message);
-        this._emit('error', {
-          message: 'Invalid WebSocket message structure',
-          code: 'INVALID_MESSAGE',
-          raw: event.data,
-          recoverable: true
-        });
-        return;
-      }
       
       // Handle heartbeat response
       if (message.type === 'pong' as any) {
@@ -240,24 +180,6 @@ class NativeSocketClient {
       
     } catch (error) {
       console.error('[WebSocket] Failed to parse message:', error);
-      console.error('[WebSocket] Raw message data:', event.data);
-      
-      // ✅ FIX #3: Enhanced error event with detailed information
-      this._emit('error', {
-        message: 'Failed to parse WebSocket message',
-        code: 'PARSE_ERROR',
-        raw: event.data,
-        recoverable: true,
-        details: error instanceof Error ? error.message : String(error)
-      });
-      
-      // ✅ FIX #3: Notify user via toast for critical parsing errors
-      import('@/store/uiStore').then(({ useUIStore }) => {
-        useUIStore.getState().showToast({
-          type: 'error',
-          message: 'Communication error. Please refresh if issue persists.',
-        });
-      });
     }
   }
 
@@ -351,16 +273,11 @@ class NativeSocketClient {
    * Disconnect WebSocket
    */
   disconnect(): void {
-    console.log('[WebSocket] Disconnect requested');
     this.isIntentionalClose = true;
     this._stopHeartbeat();
     
     if (this.ws) {
-      const state = this.ws.readyState;
-      if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
-        console.log('[WebSocket] Closing connection...');
-        this.ws.close(1000, 'Client disconnect');
-      }
+      this.ws.close(1000, 'Client disconnect');
       this.ws = null;
     }
   }
@@ -395,19 +312,13 @@ class NativeSocketClient {
 
   /**
    * Register event listener
-   * @returns Unsubscribe function to remove the listener
    */
-  on(event: WebSocketEvent, callback: EventCallback): () => void {
+  on(event: WebSocketEvent, callback: EventCallback): void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }
     
     this.eventHandlers.get(event)!.add(callback);
-    
-    // Return unsubscribe function
-    return () => {
-      this.eventHandlers.get(event)?.delete(callback);
-    };
   }
 
   /**

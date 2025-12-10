@@ -47,11 +47,6 @@ export interface MessageListProps {
   currentUserId?: string;
   
   /**
-   * ID of the message currently streaming (for cursor indicator)
-   */
-  streamingMessageId?: string | null;
-  
-  /**
    * Callback when suggested question is clicked
    */
   onQuestionClick?: (question: string, questionData: any) => void;
@@ -142,7 +137,6 @@ export const MessageList: React.FC<MessageListProps> = ({
   messages,
   isLoading = false,
   currentUserId,
-  streamingMessageId = null,
   onQuestionClick,
   onLoadMore,
   hasMore = false,
@@ -247,7 +241,6 @@ export const MessageList: React.FC<MessageListProps> = ({
               key={message.id}
               message={message}
               isOwn={message.role === 'user' || message.user_id === currentUserId}
-              isStreaming={streamingMessageId === message.id}
               onQuestionClick={onQuestionClick}
             />
           ))}

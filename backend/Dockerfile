@@ -27,6 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# Install UV - ultra-fast Python package installer
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
 # Create virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
@@ -34,9 +38,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies using UV (10-100x faster than pip)
+RUN uv pip sync --python /opt/venv/bin/python requirements.txt
 
 # Pre-download ML models (Conditional)
 RUN mkdir -p /opt/ml_cache && \

@@ -25,7 +25,7 @@
  */
 
 import React, { useRef, useState, useCallback, useLayoutEffect } from 'react';
-import { Send, Smile, Paperclip, Loader2, X, Plus, Image as ImageIcon, StopCircle } from 'lucide-react';
+import { Send, Smile, Paperclip, Loader2, X, Plus, Image as ImageIcon } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { cn } from '@/utils/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -73,17 +73,6 @@ export interface MessageInputProps {
    * @default false
    */
   enableAttachments?: boolean;
-  
-  /**
-   * Show stop button instead of send (for streaming)
-   * @default false
-   */
-  showStopButton?: boolean;
-  
-  /**
-   * Callback when stop button is clicked (cancels streaming)
-   */
-  onStop?: () => void;
   
   /**
    * Additional CSS classes
@@ -183,8 +172,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   showCounter = true,
   enableEmoji = true,
   enableAttachments = false,
-  showStopButton = false,
-  onStop,
   className
 }) => {
   // ============================================================================
@@ -393,48 +380,35 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             />
           )}
 
-          {/* Send/Stop Button - Premium Apple Style */}
-          {showStopButton ? (
-            <Tooltip content="Stop generation">
-              <button
-                onClick={onStop}
-                className="relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] bg-red-500 text-white hover:scale-110 shadow-[0_0_20px_-5px_rgba(239,68,68,0.4)] active:scale-90"
-                aria-label="Stop generation"
-                type="button"
-              >
-                <StopCircle className="w-4 h-4 fill-current" strokeWidth={2.5} />
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content={
-              isOverLimit
-                ? 'Message too long'
-                : !hasContent
-                ? 'Type a message first'
-                : 'Send message (Enter)'
-            }>
-              <button
-                onClick={handleSend}
-                disabled={isSending || isOverLimit || !hasContent || disabled}
-                className={cn(
-                  "relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
-                  !hasContent && !isSending 
-                     ? "bg-white/5 text-neutral-500 cursor-not-allowed opacity-50" 
-                     : isOverLimit 
-                     ? "bg-red-500/20 text-red-500" 
-                     : "bg-white text-black hover:scale-110 shadow-[0_0_20px_-5px_rgba(255,255,255,0.4)] active:scale-90"
-                )}
-                aria-label="Send message"
-                type="button"
-              >
-                {isSending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className={cn("w-4 h-4 transition-all", hasContent ? "ml-0.5 fill-current" : "")} strokeWidth={2.5} />
-                )}
-              </button>
-            </Tooltip>
-          )}
+          {/* Send Button - Premium Apple Style */}
+          <Tooltip content={
+            isOverLimit
+              ? 'Message too long'
+              : !hasContent
+              ? 'Type a message first'
+              : 'Send message (Enter)'
+          }>
+            <button
+              onClick={handleSend}
+              disabled={isSending || isOverLimit || !hasContent || disabled}
+              className={cn(
+                "relative flex items-center justify-center w-9 h-9 rounded-full transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                !hasContent && !isSending 
+                   ? "bg-white/5 text-neutral-500 cursor-not-allowed opacity-50" 
+                   : isOverLimit 
+                   ? "bg-red-500/20 text-red-500" 
+                   : "bg-white text-black hover:scale-110 shadow-[0_0_20px_-5px_rgba(255,255,255,0.4)] active:scale-90"
+              )}
+              aria-label="Send message"
+              type="button"
+            >
+              {isSending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className={cn("w-4 h-4 transition-all", hasContent ? "ml-0.5 fill-current" : "")} strokeWidth={2.5} />
+              )}
+            </button>
+          </Tooltip>
         </div>
       </div>
 

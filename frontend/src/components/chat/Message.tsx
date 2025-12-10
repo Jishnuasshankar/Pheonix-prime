@@ -58,11 +58,6 @@ export interface MessageProps {
   isOwn: boolean;
   
   /**
-   * Is this message currently streaming
-   */
-  isStreaming?: boolean;
-  
-  /**
    * Callback when suggested question is clicked
    */
   onQuestionClick?: (question: string, questionData: SuggestedQuestion) => void;
@@ -190,7 +185,6 @@ MessageMetadata.displayName = 'MessageMetadata';
 export const Message: React.FC<MessageProps> = ({
   message,
   isOwn,
-  isStreaming = false,
   onQuestionClick,
   onHeightChange,
   className
@@ -356,10 +350,6 @@ export const Message: React.FC<MessageProps> = ({
                 <ReactMarkdown components={markdownComponents}>
                   {message.content}
                 </ReactMarkdown>
-                {/* Streaming cursor */}
-                {isStreaming && (
-                  <span className="inline-block w-2 h-5 ml-1 bg-blue-500 animate-pulse" />
-                )}
               </div>
             )}
             

@@ -78,25 +78,60 @@ export const chatAPI = {
    * ```
    */
   sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
-    const { data } = await apiClient.post<ChatResponse>(
-      '/api/v1/chat',
-      request,
-      {
-        timeout: 30000, // 30 seconds (AI processing can take time)
+    try {
+      const { data } = await apiClient.post<ChatResponse>(
+        '/api/v1/chat',
+        request,
+        {
+          timeout: 30000, // 30 seconds (AI processing can take time)
+        }
+      );
+      
+      // ✅ ROBUST: Parse and validate suggested_questions from response
+      let parsedData = data;
+      
+      try {
+        // Handle case where suggested_questions might be stringified JSON
+        if (data.suggested_questions && typeof data.suggested_questions === 'string') {
+          console.warn('[ChatAPI] suggested_questions is a string, parsing JSON:', data.suggested_questions);
+          parsedData = {
+            ...data,
+            suggested_questions: JSON.parse(data.suggested_questions as unknown as string)
+          };
+        }
+        
+        // Ensure suggested_questions is an array (or undefined/null)
+        if (parsedData.suggested_questions && !Array.isArray(parsedData.suggested_questions)) {
+          console.error('[ChatAPI] suggested_questions is not an array, converting:', parsedData.suggested_questions);
+          parsedData = {
+            ...parsedData,
+            suggested_questions: [parsedData.suggested_questions as any]
+          };
+        }
+      } catch (parseError) {
+        console.error('[ChatAPI] Failed to parse suggested_questions, setting to empty array:', parseError);
+        parsedData = {
+          ...data,
+          suggested_questions: []
+        };
       }
-    );
-    
-    // ✅ DEBUG: Log the complete response to check suggested_questions
-    console.log('[ChatAPI] sendMessage response:', {
-      hasData: !!data,
-      hasSuggestedQuestions: !!data.suggested_questions,
-      suggestedQuestionsType: typeof data.suggested_questions,
-      suggestedQuestionsLength: Array.isArray(data.suggested_questions) ? data.suggested_questions.length : 'N/A',
-      rawSuggestedQuestions: data.suggested_questions,
-      fullResponse: data,
-    });
-    
-    return data;
+      
+      // ✅ DEBUG: Log the complete response to check suggested_questions
+      console.log('[ChatAPI] sendMessage response:', {
+        hasData: !!parsedData,
+        hasSuggestedQuestions: !!parsedData.suggested_questions,
+        suggestedQuestionsType: typeof parsedData.suggested_questions,
+        suggestedQuestionsIsArray: Array.isArray(parsedData.suggested_questions),
+        suggestedQuestionsLength: Array.isArray(parsedData.suggested_questions) ? parsedData.suggested_questions.length : 'N/A',
+        rawSuggestedQuestions: parsedData.suggested_questions,
+        fullResponse: parsedData,
+      });
+      
+      return parsedData;
+    } catch (error) {
+      console.error('[ChatAPI] sendMessage error:', error);
+      throw error;
+    }
   },
 
   /**

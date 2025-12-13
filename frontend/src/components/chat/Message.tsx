@@ -427,6 +427,23 @@ export const Message: React.FC<MessageProps> = ({
         )}
         
         {/* SUGGESTED QUESTIONS - Below AI response (NEW LOCATION) */}
+        {!isOwn && (() => {
+          // ✅ DEBUG: Log suggested questions rendering logic
+          console.log('[Message] Suggested Questions Check:', {
+            messageId: message.id,
+            isOwn,
+            hasSuggestedQuestions: !!message.suggested_questions,
+            suggestedQuestionsType: typeof message.suggested_questions,
+            suggestedQuestionsLength: message.suggested_questions ? 
+              (Array.isArray(message.suggested_questions) ? message.suggested_questions.length : 'Not an array') : 
+              'undefined/null',
+            suggestedQuestions: message.suggested_questions,
+            hasHandler: !!onQuestionClick,
+            shouldRender: !isOwn && message.suggested_questions && Array.isArray(message.suggested_questions) && message.suggested_questions.length > 0 && onQuestionClick,
+          });
+          
+          return null;
+        })()}
         {!isOwn && message.suggested_questions && message.suggested_questions.length > 0 && onQuestionClick && (
           <div className="mt-3">
             <SuggestedQuestions

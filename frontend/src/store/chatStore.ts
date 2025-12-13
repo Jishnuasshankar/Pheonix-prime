@@ -81,11 +81,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
       
       const response: ChatResponse = await chatAPI.sendMessage(request);
       
+      // ✅ DEBUG: Log the raw response to check suggested_questions
+      console.log('[ChatStore] Raw API Response:', {
+        hasSuggestedQuestions: !!response.suggested_questions,
+        suggestedQuestionsType: typeof response.suggested_questions,
+        suggestedQuestionsLength: Array.isArray(response.suggested_questions) ? response.suggested_questions.length : 'N/A',
+        suggestedQuestions: response.suggested_questions,
+      });
+      
       // Replace temp message with confirmed user message
       const confirmedUserMessage: Message = {
         ...userMessage,
         session_id: response.session_id,
       };
+      
+      // ✅ ROBUST: Parse suggested_questions safely
+      let parsedSuggestedQuestions: SuggestedQuestion[] = [];
+      
+      try {
+        if (response.suggested_questions) {
+          // Handle if it's a string (should never happen, but defensive)
+          if (typeof response.suggested_questions === 'string') {
+            console.warn('[ChatStore] suggested_questions is a string, parsing JSON');
+            parsedSuggestedQuestions = JSON.parse(response.suggested_questions);
+          } 
+          // Handle if it's already an array
+          else if (Array.isArray(response.suggested_questions)) {
+            parsedSuggestedQuestions = response.suggested_questions;
+          }
+          // Handle if it's an object (malformed)
+          else if (typeof response.suggested_questions === 'object') {
+            console.warn('[ChatStore] suggested_questions is an object, converting to array');
+            parsedSuggestedQuestions = [response.suggested_questions as any];
+          }
+        }
+      } catch (parseError) {
+        console.error('[ChatStore] Failed to parse suggested_questions:', parseError);
+        parsedSuggestedQuestions = [];
+      }
+      
+      console.log('[ChatStore] Parsed suggested_questions:', parsedSuggestedQuestions);
       
       // Add AI response
       const aiMessage: Message = {
@@ -100,8 +135,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         response_time_ms: response.response_time_ms,
         tokens_used: response.tokens_used,
         cost: response.cost,
-        suggested_questions: response.suggested_questions || [], // ✅ ATTACH ML questions to message
+        suggested_questions: parsedSuggestedQuestions, // ✅ ATTACH ML questions to message with robust parsing
       };
+      
+      console.log('[ChatStore] Setting AI message with suggested_questions:', {
+        messageId: aiMessage.id,
+        hasSuggestedQuestions: aiMessage.suggested_questions.length > 0,
+        count: aiMessage.suggested_questions.length,
+      });
       
       set((state) => ({
         messages: [
@@ -113,7 +154,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isTyping: false,
         currentEmotion: response.emotion_state || null,
         sessionId: response.session_id,
-        suggestedQuestions: response.suggested_questions || [], // Set ML-generated questions
+        suggestedQuestions: parsedSuggestedQuestions, // Set ML-generated questions with robust parsing
       }));
     } catch (error: any) {
       // Remove optimistic message on error

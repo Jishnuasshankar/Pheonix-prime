@@ -183,6 +183,26 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = React.memo(
   // RENDER CONDITIONS
   // ============================================================================
   
+  // ✅ ROBUST: Ensure questions is always an array
+  let safeQuestions: SuggestedQuestion[] = [];
+  
+  try {
+    if (questions) {
+      if (Array.isArray(questions)) {
+        safeQuestions = questions;
+      } else if (typeof questions === 'string') {
+        console.warn('[SuggestedQuestions] questions is a string, parsing:', questions);
+        safeQuestions = JSON.parse(questions);
+      } else if (typeof questions === 'object') {
+        console.warn('[SuggestedQuestions] questions is an object, wrapping in array:', questions);
+        safeQuestions = [questions as SuggestedQuestion];
+      }
+    }
+  } catch (parseError) {
+    console.error('[SuggestedQuestions] Failed to parse questions:', parseError);
+    safeQuestions = [];
+  }
+  
   // ✅ DEBUG: Log rendering conditions
   console.log('[SuggestedQuestions] Render check:', {
     visible,
@@ -190,17 +210,19 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = React.memo(
     questionsType: typeof questions,
     isArray: Array.isArray(questions),
     questionsLength: Array.isArray(questions) ? questions.length : 'N/A',
+    safeQuestionsLength: safeQuestions.length,
     questions,
-    shouldRender: visible && questions && Array.isArray(questions) && questions.length > 0,
+    safeQuestions,
+    shouldRender: visible && safeQuestions.length > 0,
   });
   
-  if (!visible || !questions || !Array.isArray(questions) || questions.length === 0) {
+  if (!visible || safeQuestions.length === 0) {
     console.log('[SuggestedQuestions] Not rendering - conditions not met');
     return null;
   }
   
   // Limit displayed questions
-  const displayQuestions = questions.slice(0, maxDisplay);
+  const displayQuestions = safeQuestions.slice(0, maxDisplay);
   
   console.log('[SuggestedQuestions] Rendering with questions:', displayQuestions);
   
@@ -369,10 +391,10 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = React.memo(
         </div>
         
         {/* Footer (if more questions available) */}
-        {questions.length > maxDisplay && (
+        {safeQuestions.length > maxDisplay && (
           <div className="px-4 text-center">
             <p className="text-xs text-gray-500">
-              +{questions.length - maxDisplay} more questions available
+              +{safeQuestions.length - maxDisplay} more questions available
             </p>
           </div>
         )}

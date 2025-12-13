@@ -183,12 +183,26 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = React.memo(
   // RENDER CONDITIONS
   // ============================================================================
   
-  if (!visible || !questions || questions.length === 0) {
+  // ✅ DEBUG: Log rendering conditions
+  console.log('[SuggestedQuestions] Render check:', {
+    visible,
+    hasQuestions: !!questions,
+    questionsType: typeof questions,
+    isArray: Array.isArray(questions),
+    questionsLength: Array.isArray(questions) ? questions.length : 'N/A',
+    questions,
+    shouldRender: visible && questions && Array.isArray(questions) && questions.length > 0,
+  });
+  
+  if (!visible || !questions || !Array.isArray(questions) || questions.length === 0) {
+    console.log('[SuggestedQuestions] Not rendering - conditions not met');
     return null;
   }
   
   // Limit displayed questions
   const displayQuestions = questions.slice(0, maxDisplay);
+  
+  console.log('[SuggestedQuestions] Rendering with questions:', displayQuestions);
   
   // ============================================================================
   // ANIMATION VARIANTS

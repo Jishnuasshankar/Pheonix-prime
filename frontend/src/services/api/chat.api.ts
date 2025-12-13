@@ -85,6 +85,17 @@ export const chatAPI = {
         timeout: 30000, // 30 seconds (AI processing can take time)
       }
     );
+    
+    // ✅ DEBUG: Log the complete response to check suggested_questions
+    console.log('[ChatAPI] sendMessage response:', {
+      hasData: !!data,
+      hasSuggestedQuestions: !!data.suggested_questions,
+      suggestedQuestionsType: typeof data.suggested_questions,
+      suggestedQuestionsLength: Array.isArray(data.suggested_questions) ? data.suggested_questions.length : 'N/A',
+      rawSuggestedQuestions: data.suggested_questions,
+      fullResponse: data,
+    });
+    
     return data;
   },
 

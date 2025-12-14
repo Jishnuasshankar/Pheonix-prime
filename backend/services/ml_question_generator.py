@@ -62,7 +62,7 @@ class MLQuestionGenerator:
         
         # Reinforcement learning state
         self.question_performance = defaultdict(lambda: {"clicks": 0, "impressions": 0, "score": 0.5})
-        self._load_historical_performance()
+        # Historical performance will be loaded asynchronously
         
         # Diversity threshold (cosine similarity)
         self.diversity_threshold = 0.85  # Questions with similarity > 0.85 are too similar
@@ -79,7 +79,7 @@ class MLQuestionGenerator:
             logger.warning(f"⚠️  Failed to load sentence transformer: {e}. Using fallback.")
             self.sentence_transformer = None
     
-    def _load_historical_performance(self):
+    async def _load_historical_performance(self):
         """Load historical question performance from database (RL component)"""
         if self.db is None:
             return
@@ -98,7 +98,8 @@ class MLQuestionGenerator:
                 {"$limit": 1000}  # Top 1000 most shown questions
             ]
             
-            results = list(collection.aggregate(pipeline))
+            # FIX: Use async to_list() instead of synchronous list()
+            results = await collection.aggregate(pipeline).to_list(length=1000)
             
             for item in results:
                 question_hash = item["_id"]
@@ -722,5 +723,8 @@ async def create_ml_question_generator(provider_manager, db) -> MLQuestionGenera
         provider_manager=provider_manager,
         db=db
     )
+    
+    # Load historical performance asynchronously
+    await generator._load_historical_performance()
     
     return generator

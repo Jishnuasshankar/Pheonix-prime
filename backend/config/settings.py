@@ -46,6 +46,61 @@ class DatabaseSettings(BaseSettings):
         env_prefix = "DB_"
 
 
+class VectorStoreSettings(BaseSettings):
+    """
+    Vector database configuration (Qdrant)
+    Following MASTERX_PROJECT_AUDIT.md recommendations for vector DB migration
+    """
+    
+    enabled: bool = Field(
+        default_factory=lambda: os.getenv("QDRANT_ENABLED", "true").lower() == "true",
+        description="Enable vector store (Qdrant)"
+    )
+    
+    url: Optional[str] = Field(
+        default_factory=lambda: os.getenv("QDRANT_URL"),
+        description="Qdrant server URL (None for embedded mode, :memory: for in-memory)"
+    )
+    
+    api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("QDRANT_API_KEY"),
+        description="Qdrant Cloud API key (optional)"
+    )
+    
+    collection_name: str = Field(
+        default="conversation_history",
+        description="Collection name for conversation embeddings"
+    )
+    
+    vector_size: int = Field(
+        default=384,
+        description="Embedding vector dimension (384 for all-MiniLM-L6-v2)"
+    )
+    
+    timeout: int = Field(
+        default=30,
+        description="Request timeout in seconds"
+    )
+    
+    search_limit: int = Field(
+        default=5,
+        description="Default limit for semantic search results"
+    )
+    
+    score_threshold: float = Field(
+        default=0.7,
+        description="Minimum similarity score threshold (0.0 to 1.0)"
+    )
+    
+    fallback_to_mongodb: bool = Field(
+        default=True,
+        description="Fall back to MongoDB if Qdrant fails"
+    )
+    
+    class Config:
+        env_prefix = "QDRANT_"
+
+
 class AIProviderSettings(BaseSettings):
     """AI Provider configuration"""
     
@@ -803,6 +858,7 @@ class MasterXSettings(BaseSettings):
     )
     
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
     ai_providers: AIProviderSettings = Field(default_factory=AIProviderSettings)
     caching: CachingSettings = Field(default_factory=CachingSettings)
     performance: PerformanceSettings = Field(default_factory=PerformanceSettings)

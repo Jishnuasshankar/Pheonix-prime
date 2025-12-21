@@ -694,3 +694,177 @@ def get_user_performance_collection():
 def get_cost_tracking_collection():
     """Get cost_tracking collection"""
     return get_database()["cost_tracking"]
+
+
+
+# ============================================================================
+# VECTOR STORE CONNECTION MANAGEMENT
+# ============================================================================
+# Following MASTERX_PROJECT_AUDIT.md Section 1.1 - Vector Database Migration
+# Integrated Qdrant vector store for semantic search with <50ms latency
+
+# Global vector store instance
+_vector_store: Optional["QdrantVectorStore"] = None
+_vector_store_initialized: bool = False
+
+
+async def initialize_vector_store() -> None:
+    """
+    Initialize Qdrant vector store for semantic search
+    
+    Following MASTERX_PROJECT_AUDIT.md recommendations:
+    - Replaces MongoDB linear search (O(n)) with HNSW indexing (O(log n))
+    - Enables semantic search with <50ms latency
+    - Graceful degradation to MongoDB if Qdrant unavailable
+    
+    Raises:
+        Exception: If initialization fails and fallback is disabled
+    """
+    global _vector_store, _vector_store_initialized
+    
+    try:
+        settings = get_settings()
+        
+        # Check if vector store is enabled
+        if not settings.vector_store.enabled:
+            logger.info("📦 Vector store disabled in configuration")
+            _vector_store = None
+            _vector_store_initialized = True
+            return
+        
+        logger.info("🔵 Initializing Qdrant vector store...")
+        
+        # Import here to avoid circular dependency
+        from services.vector_store import QdrantVectorStore
+        
+        # Create vector store instance
+        _vector_store = QdrantVectorStore(
+            url=settings.vector_store.url,
+            api_key=settings.vector_store.api_key,
+            collection_name=settings.vector_store.collection_name,
+            vector_size=settings.vector_store.vector_size,
+            timeout=settings.vector_store.timeout
+        )
+        
+        # Connect and initialize
+        await _vector_store.connect()
+        
+        _vector_store_initialized = True
+        logger.info("✅ Vector store initialized successfully")
+        logger.info(f"   Collection: {settings.vector_store.collection_name}")
+        logger.info(f"   Vector size: {settings.vector_store.vector_size}D")
+        logger.info(f"   Fallback to MongoDB: {settings.vector_store.fallback_to_mongodb}")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize vector store: {e}")
+        
+        # Check fallback configuration
+        settings = get_settings()
+        if settings.vector_store.fallback_to_mongodb:
+            logger.warning("⚠️ Vector store unavailable, will fall back to MongoDB linear search")
+            _vector_store = None
+            _vector_store_initialized = True
+            return
+        else:
+            logger.error("❌ Fallback to MongoDB disabled, vector store is required")
+            raise
+
+
+def get_vector_store() -> Optional["QdrantVectorStore"]:
+    """
+    Get vector store instance
+    
+    Returns:
+        QdrantVectorStore instance or None if disabled/unavailable
+    """
+    return _vector_store
+
+
+def is_vector_store_available() -> bool:
+    """
+    Check if vector store is available and operational
+    
+    Returns:
+        True if vector store is available and initialized
+    """
+    return _vector_store is not None and _vector_store._initialized
+
+
+async def close_vector_store() -> None:
+    """
+    Close vector store connection gracefully
+    
+    This is called during application shutdown to ensure
+    proper cleanup of resources.
+    """
+    global _vector_store, _vector_store_initialized
+    
+    if _vector_store is not None:
+        try:
+            logger.info("🔵 Closing vector store connection...")
+            
+            # Close Qdrant client
+            if _vector_store._client is not None:
+                await _vector_store._client.close()
+            
+            _vector_store = None
+            _vector_store_initialized = False
+            
+            logger.info("✅ Vector store connection closed")
+            
+        except Exception as e:
+            logger.error(f"❌ Error closing vector store: {e}")
+
+
+async def get_vector_store_health() -> Dict[str, Any]:
+    """
+    Get vector store health status
+    
+    Returns comprehensive health information including:
+    - Connection status
+    - Collection info
+    - Performance metrics
+    - Graceful degradation status
+    
+    Returns:
+        Dict with health information
+    """
+    try:
+        settings = get_settings()
+        
+        # Check if disabled
+        if not settings.vector_store.enabled:
+            return {
+                "status": "disabled",
+                "enabled": False,
+                "message": "Vector store disabled in configuration"
+            }
+        
+        # Check if not initialized
+        if _vector_store is None:
+            return {
+                "status": "unavailable",
+                "enabled": True,
+                "fallback_mode": settings.vector_store.fallback_to_mongodb,
+                "message": "Vector store not initialized (using MongoDB fallback)"
+            }
+        
+        # Get health from vector store
+        health = await _vector_store.health_check()
+        
+        return {
+            "status": "healthy" if health["healthy"] else "unhealthy",
+            "enabled": True,
+            "fallback_mode": False,
+            **health
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking vector store health: {e}")
+        return {
+            "status": "error",
+            "enabled": True,
+            "error": str(e),
+            "fallback_mode": settings.vector_store.fallback_to_mongodb
+        }
+

@@ -76,7 +76,11 @@ from utils.database import (
     close_mongodb_connection,
     initialize_database,
     get_sessions_collection,
-    get_messages_collection
+    get_messages_collection,
+    initialize_vector_store,
+    close_vector_store,
+    get_vector_store_health,
+    is_vector_store_available
 )
 from utils.logging_config import setup_logging
 from utils.errors import MasterXError
@@ -130,6 +134,19 @@ async def lifespan(app: FastAPI):
         
         # Initialize database (collections and indexes)
         await initialize_database()
+        
+        # Initialize vector store (Qdrant) for semantic search
+        # Following MASTERX_PROJECT_AUDIT.md Section 1.1
+        # Replaces MongoDB linear search with HNSW indexing
+        try:
+            await initialize_vector_store()
+            if is_vector_store_available():
+                logger.info("✅ Vector store active (Qdrant)")
+            else:
+                logger.info("ℹ️  Vector store unavailable (MongoDB fallback)")
+        except Exception as e:
+            logger.warning(f"⚠️ Vector store initialization warning: {e}")
+            logger.info("   Falling back to MongoDB for semantic search")
         
         # Initialize engine
         app.state.engine = MasterXEngine()
@@ -325,6 +342,12 @@ async def lifespan(app: FastAPI):
         if hasattr(app.state, 'health_monitor'):
             await app.state.health_monitor.stop_background_monitoring()
             logger.info("✅ Health monitoring stopped")
+        
+        # Close vector store connection
+        try:
+            await close_vector_store()
+        except Exception as e:
+            logger.error(f"Error closing vector store: {e}")
         
         await close_mongodb_connection()
     
@@ -581,6 +604,43 @@ async def detailed_health(request: Request):
             'error': str(e),
             'timestamp': datetime.utcnow().isoformat(),
             'monitoring_system': 'fallback'
+        }
+
+
+
+
+@app.get("/api/health/vector-store")
+async def vector_store_health():
+    """
+    Vector store health check endpoint
+    
+    Following MASTERX_PROJECT_AUDIT.md Section 1.1
+    Monitors Qdrant vector database for semantic search
+    
+    Returns:
+        - Vector store status (healthy/degraded/unavailable/disabled)
+        - Collection information
+        - Performance metrics
+        - Fallback mode status
+    """
+    try:
+        health = await get_vector_store_health()
+        
+        return {
+            "vector_store": health,
+            "timestamp": datetime.utcnow().isoformat(),
+            "semantic_search": "enabled" if health.get("status") == "healthy" else "fallback_to_mongodb"
+        }
+        
+    except Exception as e:
+        logger.error(f"Vector store health check failed: {e}")
+        return {
+            "vector_store": {
+                "status": "error",
+                "error": str(e)
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+            "semantic_search": "fallback_to_mongodb"
         }
 
 

@@ -276,8 +276,20 @@ class QdrantVectorStore:
                 embedding_list = list(embedding)
             
             # Create point
+            # CRITICAL FIX: Qdrant embedded mode requires UUID-compatible IDs
+            # Convert string IDs to UUID if not already UUID format
+            import uuid as uuid_lib
+            try:
+                # Try to parse as UUID
+                point_id = uuid_lib.UUID(message_id)
+            except (ValueError, AttributeError):
+                # Not a UUID, generate one from the message_id
+                # Use deterministic UUID (namespace-based) to ensure consistency
+                namespace = uuid_lib.NAMESPACE_DNS
+                point_id = uuid_lib.uuid5(namespace, message_id)
+            
             point = PointStruct(
-                id=message_id,
+                id=str(point_id),  # Qdrant accepts string UUID
                 vector=embedding_list,
                 payload=payload
             )
@@ -402,20 +414,26 @@ class QdrantVectorStore:
             
             query_filter = Filter(must=filter_conditions)
             
-            # Search
-            search_results = await self._client.search(
+            # Search using query_points (correct AsyncQdrantClient API)
+            search_results = await self._client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=query_filter,
                 limit=limit,
                 score_threshold=score_threshold
             )
             
-            # Extract results
-            results = [
-                (str(hit.id), float(hit.score))
-                for hit in search_results
-            ]
+            # Extract results (handle both search and query_points response formats)
+            results = []
+            
+            # query_points returns a QueryResponse with .points attribute
+            points = search_results.points if hasattr(search_results, 'points') else search_results
+            
+            for hit in points:
+                # Handle both ScoredPoint and SearchResult formats
+                point_id = str(hit.id)
+                score = float(hit.score)
+                results.append((point_id, score))
             
             search_time_ms = (time.time() - start_time) * 1000
             

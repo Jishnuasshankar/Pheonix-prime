@@ -246,17 +246,28 @@ class MemoryRetriever:
     Finds relevant past messages based on semantic similarity
     """
     
-    def __init__(self, embedding_engine: EmbeddingEngine, db: AsyncIOMotorDatabase):
+    def __init__(
+        self, 
+        embedding_engine: EmbeddingEngine, 
+        db: AsyncIOMotorDatabase,
+        vector_store: Optional["QdrantVectorStore"] = None
+    ):
         """
         Initialize memory retriever
+        
+        Following MASTERX_PROJECT_AUDIT.md Section 1.1:
+        - Uses Qdrant for fast semantic search when available
+        - Falls back to MongoDB linear search if Qdrant unavailable
         
         Args:
             embedding_engine: Engine for generating embeddings
             db: MongoDB database instance
+            vector_store: Qdrant vector store instance (None for MongoDB-only)
         """
         self.embedding_engine = embedding_engine
         self.db = db
         self.messages_collection = db.messages
+        self.vector_store = vector_store
     
     async def find_relevant(
         self,
@@ -294,6 +305,73 @@ class MemoryRetriever:
             # Generate query embedding
             query_embedding = await self.embedding_engine.embed_text(query)
             logger.debug(f"✅ Query embedding generated: dimension={len(query_embedding)}")
+            
+            # STRATEGY 1: Try Qdrant vector search first (fast, <50ms)
+            # Following MASTERX_PROJECT_AUDIT.md Section 1.1
+            if self.vector_store and self.vector_store._initialized:
+                try:
+                    logger.debug("🔵 Using Qdrant vector search (HNSW indexing)")
+                    
+                    # Calculate time window
+                    cutoff_date = datetime.utcnow() - timedelta(days=time_window_days)
+                    
+                    # Search in Qdrant with filters
+                    search_results = await self.vector_store.search(
+                        query_embedding=query_embedding,
+                        session_id=session_id_str,
+                        limit=top_k,
+                        score_threshold=min_similarity,
+                        filter_params={
+                            'timestamp': {'$gte': cutoff_date.isoformat()}
+                        }
+                    )
+                    
+                    if search_results:
+                        # Fetch full message details from MongoDB
+                        message_ids = [r['id'] for r in search_results]
+                        cursor = self.messages_collection.find({
+                            '_id': {'$in': message_ids},
+                            'session_id': session_id_str
+                        })
+                        
+                        messages_dict = {doc['_id']: doc for doc in await cursor.to_list(length=top_k)}
+                        
+                        # Build results with similarity scores
+                        results = []
+                        for result in search_results:
+                            msg_doc = messages_dict.get(result['id'])
+                            if msg_doc:
+                                try:
+                                    message = Message(
+                                        id=msg_doc['_id'],
+                                        session_id=msg_doc['session_id'],
+                                        user_id=msg_doc['user_id'],
+                                        role=MessageRole(msg_doc['role']),
+                                        content=msg_doc['content'],
+                                        timestamp=msg_doc['timestamp'],
+                                        emotion_state=EmotionState(**msg_doc['emotion_state']) if msg_doc.get('emotion_state') else None,
+                                        provider_used=msg_doc.get('provider_used'),
+                                        response_time_ms=msg_doc.get('response_time_ms'),
+                                        tokens_used=msg_doc.get('tokens_used'),
+                                        cost=msg_doc.get('cost')
+                                    )
+                                    results.append((message, result['score']))
+                                except Exception as e:
+                                    logger.warning(f"⚠️  Failed to parse message: {e}")
+                                    continue
+                        
+                        logger.debug(
+                            f"✅ Qdrant search complete: found {len(results)} relevant messages "
+                            f"(similarity >= {min_similarity})"
+                        )
+                        return results
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️  Qdrant search failed, falling back to MongoDB: {e}")
+                    # Fall through to MongoDB strategy
+            
+            # STRATEGY 2: Fallback to MongoDB linear search (slower, O(n))
+            logger.debug("📦 Using MongoDB linear search (fallback)")
             
             # Get recent messages from database (with embeddings)
             cutoff_date = datetime.utcnow() - timedelta(days=time_window_days)
@@ -351,7 +429,7 @@ class MemoryRetriever:
             results = results[:top_k]
             
             logger.debug(
-                f"✅ Semantic search complete: found {len(results)} relevant messages "
+                f"✅ MongoDB search complete: found {len(results)} relevant messages "
                 f"(similarity >= {min_similarity})"
             )
             
@@ -380,20 +458,30 @@ class ContextManager:
         db: AsyncIOMotorDatabase,
         max_context_tokens: int = 8000,
         short_term_memory_size: int = 20,
-        embedding_model: str = "all-MiniLM-L6-v2"
+        embedding_model: str = "all-MiniLM-L6-v2",
+        vector_store: Optional["QdrantVectorStore"] = None
     ):
         """
         Initialize context manager
+        
+        Following MASTERX_PROJECT_AUDIT.md Section 1.1:
+        - Uses Qdrant vector store for semantic search (if available)
+        - Falls back to MongoDB linear search if Qdrant unavailable
+        - Dual storage: MongoDB (messages) + Qdrant (embeddings)
         
         Args:
             db: MongoDB database instance
             max_context_tokens: Maximum tokens for context window
             short_term_memory_size: Number of recent messages to keep in memory
             embedding_model: Model for generating embeddings
+            vector_store: Qdrant vector store instance (None for MongoDB-only)
         """
         self.db = db
         self.messages_collection = db.messages
         self.sessions_collection = db.sessions
+        
+        # Vector store for semantic search
+        self.vector_store = vector_store
         
         # Initialize components
         self.embedding_engine = EmbeddingEngine(model_name=embedding_model)
@@ -403,10 +491,13 @@ class ContextManager:
         # Configuration
         self.short_term_memory_size = short_term_memory_size
         
+        # Log initialization
+        vector_mode = "Qdrant (HNSW)" if vector_store else "MongoDB (linear)"
         logger.info(
             f"✅ ContextManager initialized "
             f"(max_tokens={max_context_tokens}, "
-            f"short_term={short_term_memory_size})"
+            f"short_term={short_term_memory_size}, "
+            f"semantic_search={vector_mode})"
         )
     
     async def add_message(
@@ -478,7 +569,34 @@ class ContextManager:
             result = await self.messages_collection.insert_one(message_doc)
             
             # DEBUG: Verify insertion
-            logger.info(f"✅ Message stored: id={result.inserted_id}, has_embedding={embedding is not None}")
+            logger.info(f"✅ Message stored in MongoDB: id={result.inserted_id}, has_embedding={embedding is not None}")
+            
+            # DUAL STORAGE: Insert into Qdrant vector store if available
+            # Following MASTERX_PROJECT_AUDIT.md Section 1.1
+            if self.vector_store and embedding is not None:
+                try:
+                    success = await self.vector_store.insert(
+                        message_id=message.id,
+                        embedding=embedding_vector,  # Use numpy array, not list
+                        session_id=session_id_str,
+                        user_id=message.user_id,
+                        role=message.role,
+                        timestamp=message.timestamp,
+                        metadata={
+                            'provider_used': message.provider_used,
+                            'tokens_used': message.tokens_used,
+                            'cost': message.cost
+                        }
+                    )
+                    
+                    if success:
+                        logger.info(f"✅ Message also stored in Qdrant vector store")
+                    else:
+                        logger.warning(f"⚠️  Qdrant insert failed, using MongoDB only")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️  Qdrant insert error (graceful degradation): {e}")
+                    # Continue with MongoDB-only storage
             
             return message.id
         

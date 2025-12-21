@@ -104,12 +104,25 @@ class MasterXEngine:
         """
         if not self._db_initialized:
             try:
-                # Initialize context manager
+                # Get vector store instance (following MASTERX_PROJECT_AUDIT.md Section 1.1)
+                from utils.database import get_vector_store
+                vector_store = get_vector_store()
+                
+                # Initialize context manager with vector store integration
+                # This enables semantic search with <50ms latency via Qdrant HNSW indexing
+                # Falls back to MongoDB linear search if Qdrant unavailable
                 self.context_manager = ContextManager(
                     db=db,
                     max_context_tokens=8000,
-                    short_term_memory_size=20
+                    short_term_memory_size=20,
+                    vector_store=vector_store  # CRITICAL: Pass vector store for semantic search
                 )
+                
+                # Log vector store integration status
+                if vector_store:
+                    logger.info("✅ ContextManager initialized with Qdrant vector store (HNSW indexing)")
+                else:
+                    logger.info("ℹ️  ContextManager using MongoDB fallback (linear search)")
                 
                 # Initialize adaptive learning engine
                 self.adaptive_engine = AdaptiveLearningEngine(db=db)

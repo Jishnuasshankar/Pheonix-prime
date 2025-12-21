@@ -124,7 +124,8 @@ class QdrantVectorStore:
             logger.info("Connecting to Qdrant...")
             
             # Create client based on mode
-            if self._url is None:
+            # Check for empty string or None for embedded mode
+            if self._url is None or self._url == "":
                 # Embedded mode (for development)
                 logger.info("Using Qdrant embedded mode (local storage)")
                 self._client = AsyncQdrantClient(path="/tmp/qdrant_storage")
